@@ -1,0 +1,71 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {Session} from '../src/session';
+import {NoteWriter} from '../src/writer';
+import type {RecordData} from '../src/types';
+import {OpenCodeServer} from '../src/opencode';
+import {patchNote} from '../src/note';
+test('缺失或损坏原始日志时，自动保存及关闭不得覆盖唯一历史笔记',async()=>{
+  for(const corrupt of [false,true]) {
+    const dir=await mkdtemp(join(tmpdir(),'termnote-preserve-')),id=randomUUID(),journal=join(dir,'missing.jsonl');
+    let text=patchNote('# 手工正文\n',id,'唯一历史对话，必须保留',null);const before=text;
+    if(corrupt)await writeFile(journal,'{"type":"output","seq":1,"time":"now","data":"部分数据"}\n坏数据\n{}\n');
+    const record:RecordData={id,path:'A.md',visible:true,profile:'shell',created:'now',state:'ended',cwd:dir,executable:'/bin/sh',args:[]};
+    const session=new Session(record,journal,new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'A.md'),{bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}});
+    try{await assert.rejects(session.restore());await session.flush();await session.stop();assert.equal(text,before);assert.ok(session.historyError);}
+    finally{session.dispose();await rm(dir,{recursive:true,force:true});}
+  }
+});
+test('手动补齐、继续和结束互斥，不覆盖或遗留私有服务',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'termnote-lifecycle-'));let text='# 历史\n';
+  const original={start:OpenCodeServer.prototype.start,bind:OpenCodeServer.prototype.bind,export:OpenCodeServer.prototype.export,stop:OpenCodeServer.prototype.stop};
+  let ready!:()=>void;const gate=new Promise<void>(r=>ready=r);let starts=0,stops=0;
+  const profile={id:'oc',name:'OpenCode',adapter:'opencode' as const,executable:'opencode',args:[],cwd:dir};
+  const native={kind:'opencode' as const,api:'v2' as const,version:'2.0.26',sessionID:'ses_lifecycle'};
+  OpenCodeServer.prototype.start=async()=>{starts++;await gate;};
+  OpenCodeServer.prototype.bind=async()=>native;
+  OpenCodeServer.prototype.export=async()=>({info:{id:native.sessionID},messages:[]});
+  OpenCodeServer.prototype.stop=async()=>{stops++;};
+  const record:RecordData={id:randomUUID(),path:'A.md',visible:true,profile:'oc',created:'now',state:'ended',cwd:dir,executable:'opencode',args:[],native,launch:profile};
+  const session=new Session(record,join(dir,'log.jsonl'),new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},record.id,'A.md'),{bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}});
+  try{
+    const syncing=session.refreshNative(),again=session.refreshNative();
+    await assert.rejects(session.start(profile,dir),/同步或收尾/);
+    let ended=false;const stopping=session.stop().then(()=>ended=true);
+    await new Promise(r=>setTimeout(r,5));assert.equal(ended,false);
+    ready();await Promise.all([syncing,again,stopping]);
+    assert.equal(starts,1);assert.equal(stops,1);assert.match(text,/OpenCode 对话记录/);
+  }finally{Object.assign(OpenCodeServer.prototype,original);session.dispose();await rm(dir,{recursive:true,force:true});}
+});
+test('真实 PTY 持续保存、结束收尾、重建笔记（无重复）', {skip:process.platform==='win32',timeout:20000},async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'agent-terminal-'));
+  let text='# 我的笔记\n';const access={read:async()=>text,update:async(_path:string,fn:(text:string)=>string)=>{text=fn(text);}};
+  const record:RecordData={id:randomUUID(),path:'A.md',visible:true,profile:'shell',created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
+  const host={bridge:resolve('bridge.py'),python:async()=>({executable:'python3',prefix:[],description:'test'}),changed:()=>{}};
+  const session=new Session(record,join(dir,'log.jsonl'),new NoteWriter(access,record.id,'A.md'),host);
+  try {
+    await session.start({id:'shell',name:'测试',executable:'/bin/sh',args:['-c','printf "中文交互\\n"; sleep 0.2; printf "最终输出\\n"'],cwd:''},dir);
+    const end=Date.now()+10000;while(session.live && Date.now()<end)await new Promise(r=>setTimeout(r,20));
+    await session.stop();assert.equal(record.state,'ended');assert.match(text,/中文交互/);assert.match(text,/最终输出/);
+    const raw=await readFile(join(dir,'log.jsonl'),'utf8');
+    const events=raw.trim().split('\n').map(line=>JSON.parse(line));assert.equal(events.at(-1).type,'exit');assert.ok(events.some(e=>e.type==='output'));
+    const previous=text;
+    const recovered=new Session({...record},join(dir,'log.jsonl'),new NoteWriter(access,record.id,'A.md',record.lastHash),host);
+    try {await recovered.restore();await recovered.flush();assert.equal(text,previous);assert.equal(recovered.record.state,'ended');}
+    finally{recovered.dispose();}
+  } finally {await session.stop();session.dispose();await rm(dir,{recursive:true,force:true});}
+});
+test('日志恢复处理未完成末尾，笔记投影可重建',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'agent-recover-'));
+  let text='# 恢复\n';const id=randomUUID();
+  const record:RecordData={id,path:'R.md',visible:true,profile:'shell',created:'now',state:'running',cwd:'/tmp',executable:'/bin/sh',args:[]};
+  const journal=join(dir,'log.jsonl');await writeFile(journal,[{type:'start',seq:1,time:'now',cols:80,rows:20},{type:'output',seq:2,time:'now',data:'已落盘内容\r\n'}].map(e=>JSON.stringify(e)).join('\n')+'\n{"type":');
+  const host={bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}};
+  const session=new Session(record,journal,new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'R.md'),host);
+  try {await session.restore();await session.flush();assert.equal(record.state,'interrupted');assert.match(text,/已落盘内容/);const previous=text;await session.flush();assert.equal(text,previous);assert.match(session.error,/末尾/);}
+  finally{session.dispose();await rm(dir,{recursive:true,force:true});}
+});

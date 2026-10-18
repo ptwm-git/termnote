@@ -1,0 +1,10 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+const {version}=JSON.parse(await readFile('manifest.json','utf8'));
+await mkdir('dist',{recursive:true});
+const path=`dist/agent-note-terminal-${version}.zip`;
+const files=['manifest.json','main.js','styles.css','LICENSE','THIRD-PARTY-NOTICES.txt','README.md'];
+const script='import zipfile,sys\nwith zipfile.ZipFile(sys.argv[1],"w",zipfile.ZIP_DEFLATED) as z:\n for p in sys.argv[2:]: z.write(p,"agent-note-terminal/"+p)';
+const result=spawnSync(process.platform==='win32'?'python':'python3',['-c',script,path,...files],{stdio:'inherit'});
+if(result.status!==0)throw new Error('打包失败');
+console.log(path);
