@@ -20,7 +20,7 @@ const mock=createServer(async(req,res)=>{
   }else{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:'local',object:'chat.completion',choices:[{index:0,message:{role:'assistant',content},finish_reason:useTool?'tool_calls':'stop'}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}}));}
 });
 await new Promise<void>(r=>mock.listen(0,'127.0.0.1',r));const port=(mock.address() as any).port;
-process.env.OPENCODE_CONFIG_CONTENT=JSON.stringify({model:'termnote/test',small_model:'termnote/test',provider:{termnote:{npm:'@ai-sdk/openai-compatible',name:'TermNote local test',options:{baseURL:`http://127.0.0.1:${port}/v1`,apiKey:'local-fixture'},models:{test:{name:'test',limit:{context:32000,output:2048}}}}}});
+process.env.OPENCODE_CONFIG_CONTENT=JSON.stringify({model:'termnote/test',small_model:'termnote/test',provider:{termnote:{npm:'@ai-sdk/openai-compatible',name:'TermNote local test',options:{baseURL:`http://127.0.0.1:${port}/v1`,apiKey:'local-fixture'},models:{test:{name:'test',limit:{context:32000,output:2048}},test2:{name:'test2',limit:{context:32000,output:2048}}}}}});
 await writeFile(join(dir,'fixture.txt'),'TOOL_RESULT_中文文件内容');
 const profile:Profile={id:'test',name:'OpenCode isolated',executable:process.env.TERMNOTE_OPENCODE||'opencode',adapter:'opencode',args:[],cwd:dir,model:'termnote/test'};
 const host={bridge:resolve('bridge.py'),python:async()=>({executable:process.platform==='win32'?'python':'python3',prefix:[],description:'test'})};
@@ -40,7 +40,9 @@ try {
     const archive=new NativeArchive(join(dir,`native-${index}.json`));await archive.merge(binding,profile,dir,await server.export(binding));
     assert.match(archive.render(),new RegExp(`TEST-${index}`));assert.doesNotMatch(archive.render(),new RegExp(`TEST-${1-index}`));assert.match(archive.render(),/本地模型已回复/);if(index===0&&binding.api==='v2'){assert.match(archive.render(),/工具执行/);assert.match(archive.render(),/TOOL_RESULT_中文文件内容/);}
   }
-  const binding=ids[0];await servers[0].stop();const resumed=new OpenCodeServer();servers[0]=resumed;await resumed.start(host,profile,dir);assert.equal((await resumed.bind(profile,binding)).sessionID,binding.sessionID);
+  const binding=ids[0];
+  if(binding.api==='v2'){await (servers[0] as any).call('/api/session/'+binding.sessionID+'/model','POST',{model:{providerID:'termnote',id:'test2'}});const changed=new NativeArchive(join(dir,'native-0.json'));await changed.load(binding);await changed.merge(binding,profile,dir,await servers[0].export(binding));assert.match(changed.render(),/test2/);}
+  await servers[0].stop();const resumed=new OpenCodeServer();servers[0]=resumed;await resumed.start(host,profile,dir);assert.equal((await resumed.bind(profile,binding)).sessionID,binding.sessionID);
   const recovered=new NativeArchive(join(dir,'native-0.json'));await recovered.load(binding);const before=recovered.render();assert.equal(await recovered.merge(binding,profile,dir,await resumed.export(binding)),false);assert.equal(recovered.render(),before);
-  console.log(JSON.stringify({ok:true,version:resumed.version,independentSessions:2,resume:true,archiveDedupe:true,localModelRequests:calls,evidence:dir}));
+  console.log(JSON.stringify({ok:true,version:resumed.version,independentSessions:2,resume:true,archiveDedupe:true,modelSwitch:binding.api==='v2',toolResult:binding.api==='v2',localModelRequests:calls,evidence:dir}));
 }finally{await Promise.allSettled(servers.map(s=>s.stop()));await new Promise<void>(r=>mock.close(()=>r()));}

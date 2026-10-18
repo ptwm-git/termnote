@@ -10,7 +10,10 @@ export interface RecordData {
 export interface PluginData { settings: Settings; records: RecordData[]; counters: Record<string, number>; }
 export interface BridgeEvent { type: 'start'|'output'|'resize'|'exit'|'error'; seq: number; time: string; data?: string; bytes?: string; cols?: number; rows?: number; code?: number; message?: string; }
 export const DEFAULT_SETTINGS: Settings = {
-  python: '', fontSize: 14, defaultProfile: 'shell',
-  profiles: [{ id: 'shell', name: '系统终端', executable: '', args: [], cwd: '' }],
+  python: '', fontSize: 14, defaultProfile: 'opencode',
+  profiles: [
+    {id:'opencode',name:'OpenCode',executable:'opencode',args:[],cwd:'',adapter:'opencode',model:''},
+    {id:'shell',name:'系统终端',executable:'',args:[],cwd:'',adapter:'terminal'},
+  ],
 };
 export const STATE_LABEL: Record<RunState,string> = {idle:'待启动',starting:'启动中',running:'运行中',ended:'已结束',interrupted:'已中断',failed:'启动失败',missing:'文件已删除'};

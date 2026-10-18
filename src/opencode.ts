@@ -47,6 +47,7 @@ export class OpenCodeServer {
         response.on('data',(chunk:Buffer)=>{length+=chunk.length;if(length>128*1024*1024){req.destroy(new Error('原生记录超过单次同步限制，保留原始日志与上次归档'));return;}chunks.push(chunk);});
         response.on('end',()=>{
           if(!response.statusCode||response.statusCode>=300){reject(new Error(response.statusCode===404?'OpenCode 原生会话不存在；不会自动创建替代会话':`OpenCode 同步失败（HTTP ${response.statusCode}）`));return;}
+          if(response.statusCode===204){resolve(undefined);return;}
           try{resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{reject(new Error('OpenCode 返回非 JSON 数据，保留上次归档'));}
         });response.on('error',reject);
       });

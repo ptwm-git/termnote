@@ -29,6 +29,7 @@ Run local agents in tabbed terminals and continuously save each session to a Mar
 ## Agent 设置与 OpenCode
 
 - 设置底部可添加 OpenCode、Codex、Claude Code 或自定义预设，编辑路径、参数和工作目录；预设并不附带相应程序。支持同一 Agent 的多套配置和默认项。
+- 全新安装默认使用 OpenCode，也保留系统终端预设；从旧版升级继续使用原先的配置和默认项。
 - 「检测 Agent 版本」仅执行 `--version`。通用终端支持用户安装的命令行 Agent，不猜测消息角色。
 - OpenCode 增强模式使用每篇笔记独有的原生会话 ID，支持「继续此 OpenCode 会话」与「从此 OpenCode 原生会话补齐记录」。OpenCode 2.0.26 已有实际协议测试；1.x 提供接口兼容分支，实际程序验收范围见验证记录。未知主版本应选择通用终端模式。
 - 可选模型填写 `provider/model`（2.x）；留空使用 OpenCode 原生配置。1.x 在原生界面选择模型。登录、提供商与密钥均在 OpenCode 中设置，本插件没有统一模型账户或密钥输入框。
