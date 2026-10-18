@@ -31,7 +31,7 @@
 1. [x] 确定名称为 TermNote（中文「终端笔记」），同步源码显示名称及当前文档；保留插件 ID `agent-note-terminal` 和现有数据路径，不引入身份迁移。2026-10-18 初步查重未发现同名，提交前再次核对；公开仓库与发行资料在步骤 4 使用该名称。
 2. [x] 修正标准安装兼容：自有 Python 源码内嵌 main.js，通过 `-c` 运行；移除测试库中的旧 bridge.py，仅安装三个标准运行文件后完成 Shell、OpenCode 两原生 TUI、停止/继续与重载测试。没有自动下载安装 Python 或第三方依赖；许可文本内嵌 main.js。
 3. [x] 完成可用环境的发布验收与说明：Windows 真实 CI 的 ConPTY、中文/Emoji、尺寸、清理和构建通过；最低 Obsidian 使用实际验收的 1.14.4；依赖、模型凭证归属及本机文件访问均在 README 披露。Windows 图形界面仍明确待人工试用。
-4. [x] 已建立 [公开源码仓库](https://github.com/ptwm-git/termnote) 与 [0.2.0 Release](https://github.com/ptwm-git/termnote/releases/tag/0.2.0)，附件含标准文件、ZIP 与 SHA256SUMS；BRAT 安装/更新检查通过。已通过官方社区表单提交并发布 [公开条目](https://community.obsidian.md/plugins/agent-note-terminal)，自动审核进行中，尚未开放社区安装。用户可先用 BRAT 测试；平台审核完成由外部流程决定，最新反馈见 docs/RELEASE.md。
+4. [x] 已建立 [公开源码仓库](https://github.com/ptwm-git/termnote) 与 [0.2.0 Release](https://github.com/ptwm-git/termnote/releases/tag/0.2.0)，附件含标准文件、ZIP 与 SHA256SUMS；BRAT 安装/更新检查通过。已通过官方社区表单提交并发布 [公开条目](https://community.obsidian.md/plugins/agent-note-terminal)，0.2.0 的自动审核问题已在后续补丁修正；0.2.2 正式扫描 Completed、无 Error，公开社区安装入口已开放。历史过程及证据见 docs/RELEASE.md。
 
 官方依据：[提交与安装文件](https://docs.obsidian.md/plugins/releasing/submit-plugin)、[开发者政策](https://docs.obsidian.md/community-directory/developer-policies)、[提交要求](https://docs.obsidian.md/community-directory/submission-requirements-for-plugins)、[BRAT](https://github.com/TfTHacker/obsidian42-brat)。
 
@@ -42,13 +42,13 @@
 1. [x] 两处设置标题使用 Obsidian Setting.setHeading，补充明确的英文安装/权限说明；不改动会话协议或存储格式。
 2. [x] 27 项检查、实际设置页加载及独立增量审查通过；设置版本号与发布文件一致。
 3. [x] GitHub CI 构建并提供发行来源证明，发布 0.2.1；BRAT 从 0.2.0 实际升级成功，24 个会话 ID 完全保留。社区已确认识别新版本并排队。
-4. [ ] 社区 0.2.1 自动复审完成，检查无阻断错误及安装入口状态。
-5. [ ] 同步发行记录、验证范围与根目录交付记录；真实 Windows 图形界面等未测范围继续明示。
+4. [x] 社区 0.2.1 自动复审完成，发现设置标题重复插件名；转 0.2.2 修正并重送审，未宣称该旧版审核通过。
+5. [x] 同步发行记录、验证范围与根目录交付记录；真实 Windows 图形界面等未测范围继续明示。后续复审结果继续由 0.2.2 记录承接。
 
 ## 0.2.2 设置标题规范补正
 
 0.2.1 平台复审进一步报告「设置标题不得包含插件名」。将该标题改为「运行环境」，先用官方 ESLint 与社区分支扫描检查，再创建版本发行；会话/存储/协议不变。
 
 1. [x] 修改标题，加入官方 ESLint 门禁；实际设置页、27 项检查及独立增量审查通过。121 条既有静态 Warning 保留可见，无 Obsidian 阻断 Error。
-2. [ ] 提交源码并进行社区分支扫描，确认无阻断错误后再创建 0.2.2 标签。
-3. [ ] CI 构建/来源证明、公开发行、BRAT 升级及社区发行复审完成；同步实际状态。
+2. [x] 提交源码 cda06018d367a29e71a314f67005504d19f8f881；社区预览扫描显示 Completed，无 Error，保留 Warning/Recommendation。源码 Windows/macOS CI 通过后，才创建同提交的 0.2.2 标签。
+3. [x] CI 构建/来源证明、0.2.2 公开发行与 BRAT 0.2.1→0.2.2 升级通过，保留 24 个会话；社区正式扫描 Completed、无 Error，平台逐字节重建 main.js 成功，公开 Add to Obsidian 安装入口开放；同步实际状态。

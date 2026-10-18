@@ -14,7 +14,7 @@ TermNote is a desktop Obsidian plugin that embeds an interactive terminal in a t
 
 Use Obsidian **1.14.4 or later on macOS or Windows**. Mobile devices are not supported. Install **Python 3.9 or later**. Windows also needs `pywinpty`, installed into the same interpreter with `python -m pip install pywinpty`. Install and authenticate your chosen agent separately.
 
-While community review is pending, install with [BRAT](https://github.com/TfTHacker/obsidian42-brat) by adding `ptwm-git/termnote`, or download the ZIP from [GitHub Releases](https://github.com/ptwm-git/termnote/releases/latest). Extract its `agent-note-terminal` folder into your vault's `.obsidian/plugins/` and enable **TermNote**. The runtime consists of the standard `main.js`, `manifest.json` and `styles.css` files; the Python bridge is embedded in the bundle.
+Install **TermNote** from its [Obsidian Community page](https://community.obsidian.md/plugins/agent-note-terminal) using **Add to Obsidian**. Version 0.2.2 has completed the automated community review. Alternatively, use [BRAT](https://github.com/TfTHacker/obsidian42-brat) with `ptwm-git/termnote`, or download the ZIP from [GitHub Releases](https://github.com/ptwm-git/termnote/releases/latest). Extract its `agent-note-terminal` folder into your vault's `.obsidian/plugins/` and enable **TermNote**. The runtime consists of the standard `main.js`, `manifest.json` and `styles.css` files; the Python bridge is embedded in the bundle.
 
 Open a Markdown note and run **TermNote: 在当前笔记打开终端** from the command palette, or click the terminal ribbon icon. A fresh installation defaults to OpenCode. Use its native account/model setup before chatting. In Settings → TermNote, use the environment check and configure your agent profiles. Use the **+** button for a new independent conversation. Closing a terminal tab hides it while recording continues; use the stop button to end its process.
 
@@ -43,7 +43,7 @@ Obsidian 桌面插件：多标签终端，每个标签绑定一篇真实 Markdow
 
 ## 安装与开始
 
-社区目录审核通过前，可先在 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 添加仓库 `ptwm-git/termnote` 安装和更新；也可下载 GitHub Release 的 ZIP 手动安装。测试通过范围及剩余限制见 [验证记录](docs/VALIDATION.md)。
+0.2.2 已完成社区自动审核，可从 [社区页面](https://community.obsidian.md/plugins/agent-note-terminal) 点击 **Add to Obsidian** 安装。也可在 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 添加仓库 `ptwm-git/termnote` 安装和更新，或下载 GitHub Release 的 ZIP 手动安装。测试通过范围及剩余限制见 [验证记录](docs/VALIDATION.md)。
 
 [下载安装包](https://github.com/ptwm-git/termnote/releases/latest) · [发布状态](docs/RELEASE.md)
 

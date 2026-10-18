@@ -5,7 +5,9 @@
 - 设置首标题使用「运行环境」，不再包含插件名；第二标题「启动配置」，两者均为标准 Setting 标题。
 - 官方 Obsidian ESLint 门禁：0 条阻断错误、121 条保留的静态警告；Obsidian 规范严重级别不降级，通用静态检查按平台所示列为 Warning，严格 tsc 继续阻断类型错误。
 - 本机 20 项 Node/TypeScript、7 项 Python 测试与构建通过。实际设置页正常，24 个会话保留，无健康会话错误、没有自动启动程序。
-- fresh 独立增量审查 PASS：39 条 Obsidian 规则与官方级别一致；将标题替回旧值可复现该 Error；版本、依赖、YAML、类型检查通过。社区分支扫描及发行结果在发布记录同步。
+- fresh 独立增量审查 PASS：39 条 Obsidian 规则与官方级别一致；将标题替回旧值可复现该 Error；版本、依赖、YAML、类型检查通过。社区固定提交 cda06018d367a29e71a314f67005504d19f8f881 的预览扫描已显示 Completed，无 Error；既有 Warning/Recommendation 保留。
+- [源码 CI 39120133250](https://github.com/ptwm-git/termnote/actions/runs/39120133250) 的 Windows/macOS 规范检查、27 项测试、构建与真实 Windows OpenCode 协议全部通过。[发行工作流 39120489757](https://github.com/ptwm-git/termnote/actions/runs/39120489757) 全部成功，CI 附件的来源证明、SHA256SUMS、ZIP CRC 与本机构建对照通过。
+- BRAT 0.2.1→0.2.2 实际升级成功，24 个原会话 ID 保留，无健康会话错误，无自动启动程序；安装文件与 CI 附件一致。社区正式 0.2.2 扫描已 Completed、无 Error；来源证明 Pass，平台实际重建 main.js 并确认逐字节一致。公开页面 Add to Obsidian 已为可用链接，目标 `obsidian://show-plugin?id=agent-note-terminal`。
 
 ## 0.2.1 审核修正 — 2026-10-18
 
@@ -27,7 +29,7 @@
 - Obsidian 原生 TUI：scripts/obsidian-v020.mjs 通过；两个内嵌 OpenCode 2.x 标签完成中文提问与回答，无串写；停止并重载插件后消息不重复、不自动启动；删除设置中的配置后仍能按历史快照继续原 ID，并保存第二轮对话。
 - 隔离方式：以上 Agent 测试使用独立 XDG 配置/数据目录和本机确定性模型服务，不读取用户认证文件或历史，不消费实际模型额度。证明的是实际 Agent/PTY/协议/归档流程，不能当作外部模型质量或账户登录验证。
 - 独立审查：已修复生命周期竞争、进程树遗留、日志缺失覆盖唯一笔记、预检查失败重载后无法重试及序号缺口保护问题；最后一轮恢复保全独立复审通过，真实笔记的空日志、多个合法前缀截断均拒绝覆盖，完整日志恢复保持原文。
-- Windows/macOS CI：均实际通过。Windows 使用官方 Backend.ConPTY 常量、UTF-8 控制台初始化和 Job 对象清理；真正的 ConPTY、中文/Emoji、尺寸、持久化及清理通过。Windows 额外下载并运行官方 OpenCode 1.19.3，以本地模型完成两个独立会话、停止/继续和归档去重。[真实 Agent 验证运行](https://github.com/ptwm-git/termnote/actions/runs/39118186305)、[发行源码最终检查](https://github.com/ptwm-git/termnote/actions/runs/39118251780) 全部成功。该结果不代替 Windows Obsidian 图形界面验收。
+- Windows/macOS CI：均实际通过。Windows 使用官方 Backend.ConPTY 常量、UTF-8 控制台初始化和 Job 对象清理；真正的 ConPTY、中文/Emoji、尺寸、持久化及清理通过。Windows 额外下载并运行官方 OpenCode 1.19.3，以本地模型完成两个独立会话、停止/继续和归档去重。[真实 Agent 验证运行](https://github.com/ptwm-git/termnote/actions/runs/39118186305)、[发行源码最终检查](https://github.com/ptwm-git/termnote/actions/runs/39118251780) 全部成功。Windows 的 Node 测试为 19 通过、1 跳过（该用例固定使用 /bin/sh），Python 7 项及单独的真实 ConPTY/OpenCode 流程通过；不把该跳过用例计为 Windows 通过。该结果不代替 Windows Obsidian 图形界面验收。
 - 公开发行及 BRAT：已发布 [0.2.0](https://github.com/ptwm-git/termnote/releases/tag/0.2.0)。在 test-vault 使用 BRAT 2.2.0 从公开仓库强制安装最新版并重新启用成功；23 个已有会话均保留、无健康会话错误。远端安装的 main.js/styles.css SHA256 与发行产物一致；BRAT 重新序列化的 manifest.json 字段完全一致，无旧 bridge.py。更新检查成功并确认已是 0.2.0。
 
 截图：[preview.png](preview.png)，来自真实 Obsidian 中运行的 OpenCode TUI 与旁边自动保存的 Markdown 预览；画面中的模型为本地测试提供商。
