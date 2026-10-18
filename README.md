@@ -112,6 +112,8 @@ npm run package
 node scripts/install.mjs "/测试知识库绝对路径"
 ```
 
+开发检查含官方 Obsidian ESLint 规则：Obsidian 规范的 Error 阻断发行；通用静态检查按社区扫描级别列为 Warning，仍完整输出，TypeScript 严格编译继续阻断类型错误。检查器声明的旧 Obsidian 精确 peer 版本通过 npm override 对齐本项目实际使用的 Obsidian 类型版本；不降低项目 API 或运行版本。
+
 源码职责：`main.ts` 注册插件和设置；`manager.ts` 管理文件、序号与会话；`session.ts` 桥接进程及保存队列；`writer.ts`/`note.ts` 检测笔记冲突；`transcript.ts` 解析终端控制符；`view.ts` 管理标签及终端显示；`bridge.py` 运行真正的本机终端并归档输出。
 
 测试记录见 [docs/VALIDATION.md](docs/VALIDATION.md)。源码按 MIT 许可发布，第三方终端组件的许可见 THIRD-PARTY-NOTICES.txt，发行 main.js 也内嵌许可文本。
