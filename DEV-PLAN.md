@@ -26,11 +26,20 @@
 
 ## 0.2.0 发布准备
 
-目标：完成验收后提交 Obsidian 社区插件目录，审核通过后支持在 Obsidian 内搜索、安装和更新。当前尚未发布，名称已定为 TermNote · 终端笔记。
+目标：完成验收后提交 Obsidian 社区插件目录，审核通过后支持在 Obsidian 内搜索、安装和更新。0.2.0 已公开发行，社区目录已提交并公开条目；审核状态见发布记录。名称已定为 TermNote · 终端笔记。
 
 1. [x] 确定名称为 TermNote（中文「终端笔记」），同步源码显示名称及当前文档；保留插件 ID `agent-note-terminal` 和现有数据路径，不引入身份迁移。2026-10-18 初步查重未发现同名，提交前再次核对；公开仓库与发行资料在步骤 4 使用该名称。
 2. [x] 修正标准安装兼容：自有 Python 源码内嵌 main.js，通过 `-c` 运行；移除测试库中的旧 bridge.py，仅安装三个标准运行文件后完成 Shell、OpenCode 两原生 TUI、停止/继续与重载测试。没有自动下载安装 Python 或第三方依赖；许可文本内嵌 main.js。
 3. [x] 完成可用环境的发布验收与说明：Windows 真实 CI 的 ConPTY、中文/Emoji、尺寸、清理和构建通过；最低 Obsidian 使用实际验收的 1.14.4；依赖、模型凭证归属及本机文件访问均在 README 披露。Windows 图形界面仍明确待人工试用。
-4. [ ] 建立公开源码仓库及版本号一致的 GitHub Release，附件提供标准插件文件；验证 BRAT 测试安装和更新，再通过官方社区目录提交并处理审核反馈。用户可先用 BRAT 测试，无需等待社区审核；不能承诺审核时长或结果。
+4. [x] 已建立 [公开源码仓库](https://github.com/ptwm-git/termnote) 与 [0.2.0 Release](https://github.com/ptwm-git/termnote/releases/tag/0.2.0)，附件含标准文件、ZIP 与 SHA256SUMS；BRAT 安装/更新检查通过。已通过官方社区表单提交并发布 [公开条目](https://community.obsidian.md/plugins/agent-note-terminal)，自动审核进行中，尚未开放社区安装。用户可先用 BRAT 测试；平台审核完成由外部流程决定，最新反馈见 docs/RELEASE.md。
 
 官方依据：[提交与安装文件](https://docs.obsidian.md/plugins/releasing/submit-plugin)、[开发者政策](https://docs.obsidian.md/community-directory/developer-policies)、[提交要求](https://docs.obsidian.md/community-directory/submission-requirements-for-plugins)、[BRAT](https://github.com/TfTHacker/obsidian42-brat)。
+
+## 0.2.1 社区审核修正
+
+平台已公开 0.2.0 条目，自动审核报告两处设置标题错误。保留既有发行版，以补丁版修正并重送审。
+
+1. [x] 两处设置标题使用 Obsidian Setting.setHeading，补充明确的英文安装/权限说明；不改动会话协议或存储格式。
+2. [x] 27 项检查、实际设置页加载及独立增量审查通过；设置版本号与发布文件一致。
+3. [ ] GitHub CI 构建并提供发行来源证明，发布 0.2.1；BRAT 更新保留会话，社区检查新版本并确认无阻断错误。
+4. [ ] 同步发行记录、验证范围与根目录交付记录；真实 Windows 图形界面等未测范围继续明示。

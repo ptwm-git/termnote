@@ -61,7 +61,7 @@ class TerminalSettings extends PluginSettingTab {
   constructor(private plugin:AgentNoteTerminal) {super(plugin.app,plugin);}
   display():void {
     const {containerEl}=this;containerEl.empty();containerEl.addClass('ant-settings');const data=this.plugin.data.settings;
-    containerEl.createEl('h2',{text:'TermNote · 终端笔记'});
+    new Setting(containerEl).setName('TermNote · 终端笔记').setHeading();
     containerEl.createEl('p',{text:'每个标签是一篇真实笔记。程序使用本机安装和登录状态；插件持续归档终端显示的文字，不猜测用户/Agent 角色。'});
     new Setting(containerEl).setName('Python 解释器路径').setDesc('留空自动检测 Python 3.9+。Windows 还需要在同一个解释器安装 pywinpty。').addText(input=>input.setPlaceholder(process.platform==='win32'?'C:\\Python313\\python.exe':'/opt/homebrew/bin/python3').setValue(data.python).onChange(async value=>{data.python=value;this.plugin.manager.resetPython();await this.plugin.manager.persist();}));
     const result=containerEl.createDiv();
@@ -74,7 +74,7 @@ class TerminalSettings extends PluginSettingTab {
     new Setting(containerEl).setName('默认启动配置').addDropdown(drop=>{
       for(const p of data.profiles)drop.addOption(p.id,p.name);drop.setValue(data.defaultProfile).onChange(async value=>{data.defaultProfile=value;await this.plugin.manager.persist();});
     });
-    containerEl.createEl('h3',{text:'启动配置'});
+    new Setting(containerEl).setName('启动配置').setHeading();
     containerEl.createEl('p',{text:'系统终端留空程序路径即可。Agent 可填写完整可执行文件路径，参数使用 JSON 数组；也可以先启动系统终端，再手动输入任意 Agent 命令。'});
     for(const profile of data.profiles) {
       const box=containerEl.createDiv({cls:'ant-profile'});

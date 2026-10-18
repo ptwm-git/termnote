@@ -1,8 +1,36 @@
+# TermNote
+
+TermNote is a desktop Obsidian plugin that embeds an interactive terminal in a tabbed workspace. Every terminal tab belongs to a real Markdown note. Commands and displayed output are continuously saved, so the note remains readable, searchable and shareable after the terminal closes or the plugin is removed.
+
+## Features
+
+- Run your installed command line agents or a system shell, with custom executable paths, arguments and working directories.
+- Open multiple independent tabs. New tabs create incrementally named notes in the same folder; renaming a note updates its tab.
+- Save raw terminal output before updating the readable Markdown record. Existing user text outside the managed record is preserved.
+- Resume a specific OpenCode session by its native ID. OpenCode integration archives user messages, assistant answers and tool results without duplicating messages on refresh.
+- Choose among OpenCode, Codex, Claude Code and custom launch profiles. Agent programs and model accounts are not included.
+
+## Requirements and installation
+
+Use Obsidian **1.14.4 or later on macOS or Windows**. Mobile devices are not supported. Install **Python 3.9 or later**. Windows also needs `pywinpty`, installed into the same interpreter with `python -m pip install pywinpty`. Install and authenticate your chosen agent separately.
+
+While community review is pending, install with [BRAT](https://github.com/TfTHacker/obsidian42-brat) by adding `ptwm-git/termnote`, or download the ZIP from [GitHub Releases](https://github.com/ptwm-git/termnote/releases/latest). Extract its `agent-note-terminal` folder into your vault's `.obsidian/plugins/` and enable **TermNote**. The runtime consists of the standard `main.js`, `manifest.json` and `styles.css` files; the Python bridge is embedded in the bundle.
+
+Open a Markdown note and run **TermNote: 在当前笔记打开终端** from the command palette, or click the terminal ribbon icon. A fresh installation defaults to OpenCode. Use its native account/model setup before chatting. In Settings → TermNote, use the environment check and configure your agent profiles. Use the **+** button for a new independent conversation. Closing a terminal tab hides it while recording continues; use the stop button to end its process.
+
+The interface currently uses Chinese labels. The detailed Chinese guide below explains all controls. [Release status](docs/RELEASE.md) and [validation results](docs/VALIDATION.md) distinguish tested behavior from remaining limits. macOS Obsidian and actual OpenCode conversations have been exercised; Windows ConPTY and real OpenCode protocol tests pass in CI, while the Windows Obsidian graphical interface still needs manual testing.
+
+## Local access, network and stored records
+
+This plugin launches local programs with your user permissions. Those programs can execute commands and read or write files, including working directories outside the vault. OpenCode integration creates an authenticated service bound only to `127.0.0.1`. The plugin does not install dependencies, collect telemetry or read agent authentication files. The chosen agent manages model connections, credentials and any provider charges.
+
+Conversations and displayed tool results are stored as **plain text** in your vault. Review the actual contents before sharing. Raw logs live in `.agent-note-terminal/`; keep those logs and the plugin's data together with the notes for recovery. Do not run the same session on two computers concurrently. Generic terminal mode records visible output and does not promise accurate role classification or native context resume for every agent. A power loss can lose data that had not reached disk.
+
+---
+
 # TermNote · 终端笔记
 
 Obsidian 桌面插件：多标签终端，每个标签绑定一篇真实 Markdown 笔记，自动持续保存终端显示的文字。
-
-Run local agents in tabbed terminals and continuously save each session to a Markdown note. OpenCode integration adds explicit native session resume and structured conversation records.
 
 0.2.0 使用新名称 TermNote · 终端笔记；0.1.0 测试包显示原名 Agent Note Terminal。插件 ID 及数据路径继续使用 `agent-note-terminal`，已有笔记无需因更名迁移。
 
@@ -15,7 +43,7 @@ Run local agents in tabbed terminals and continuously save each session to a Mar
 
 ## 安装与开始
 
-社区目录审核通过前，可先在 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 添加仓库 `ptwm-git/termnote` 安装和更新；也可下载 GitHub Release 的 ZIP 手动安装。仓库是否已发布、测试通过范围及剩余限制见 [验证记录](docs/VALIDATION.md)。
+社区目录审核通过前，可先在 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 添加仓库 `ptwm-git/termnote` 安装和更新；也可下载 GitHub Release 的 ZIP 手动安装。测试通过范围及剩余限制见 [验证记录](docs/VALIDATION.md)。
 
 [下载安装包](https://github.com/ptwm-git/termnote/releases/latest) · [发布状态](docs/RELEASE.md)
 
@@ -24,7 +52,7 @@ Run local agents in tabbed terminals and continuously save each session to a Mar
 3. 在 Obsidian 设置 → 第三方插件中启用 **TermNote**。
 4. 在插件设置点击“检测”；如果未找到 Python，填写其完整解释器路径后重新检测。
 5. 打开一篇笔记，点击左侧终端图标，或执行“TermNote：在当前笔记打开终端”。
-6. 在真正的 Shell 中输入你平时使用的 Agent 命令即可。也可在设置中为 Agent 配置可执行文件与参数，然后从工具栏选择并启动。
+6. 全新安装默认启动 OpenCode；在原生界面完成账户与模型设置后即可对话。需要 Shell 时，在设置或工具栏选择「系统终端」，再输入你平时使用的命令。
 
 程序与参数分别填写。例如程序是 `/完整路径/某个Agent`，参数填写 `[]` 或 `["--某个参数", "值"]`；有空格的路径无需自己加引号。工作目录留空时使用绑定笔记所在目录。直接填写程序名时，它须位于 Obsidian 进程可见的 PATH；从系统终端启动的 Agent 则使用该 Shell 的环境。
 

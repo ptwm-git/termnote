@@ -1,6 +1,6 @@
 {
   "name": "agent-note-terminal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Tabbed terminal sessions saved continuously as Obsidian notes",
   "main": "main.js",
