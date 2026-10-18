@@ -159,7 +159,13 @@ class BridgeTests(unittest.TestCase):
             c = Client(d, 'import os,time;data="中文😀".encode();[(os.write(1,bytes([b])),time.sleep(.01)) for b in data]')
             try:
                 c.until(lambda es: any(e['type'] == 'exit' for e in es))
-                self.assertEqual(c.output(), '中文😀')
+                if os.name == 'nt':
+                    # ConPTY emits viewport updates; it is not a byte-transparent pipe.
+                    for character in '中文😀':
+                        self.assertIn(character, c.output())
+                    self.assertNotIn('\ufffd', c.output())
+                else:
+                    self.assertEqual(c.output(), '中文😀')
                 self.assertEqual(c.finish(), '')
                 self.assertEqual(c.proc.returncode, 0)
             finally:

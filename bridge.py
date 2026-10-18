@@ -105,9 +105,17 @@ class WindowsTerminal:
             from winpty import PtyProcess
         except ImportError as exc:
             raise RuntimeError('当前 Python 缺少 pywinpty：请用同一解释器运行 -m pip install pywinpty') from exc
-        # Pass argv as an array so paths, spaces and Unicode use pywinpty's quoting.
+        self.job = windows_job()
+        # Configure the new console itself before starting the user's program.
+        # PYTHONIOENCODING alone cannot change ConPTY's byte-output code page.
+        bootstrap = ('import ctypes,subprocess,sys,signal;'
+                     'ctypes.windll.kernel32.SetConsoleCP(65001);'
+                     'ctypes.windll.kernel32.SetConsoleOutputCP(65001);'
+                     'p=subprocess.Popen(sys.argv[1:]);'
+                     'signal.signal(signal.SIGINT,signal.SIG_IGN);'
+                     'sys.exit(p.wait())')
         self.process = PtyProcess.spawn(
-            [config['executable'], *config.get('args', [])], cwd=config['cwd'],
+            [sys.executable, '-u', '-c', bootstrap, config['executable'], *config.get('args', [])], cwd=config['cwd'],
             env=dict(os.environ, TERM='xterm-256color', COLORTERM='truecolor'),
             dimensions=(config.get('rows', 30), config.get('cols', 100)), backend=1)
         self.pid = self.process.pid

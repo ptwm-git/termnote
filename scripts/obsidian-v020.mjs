@@ -19,7 +19,7 @@ try {
   const records=await ev(`(async()=>{const p=app.plugins.plugins['agent-note-terminal'],m=p.manager;const profile={id:${JSON.stringify(profileID)},name:'OpenCode 本地模型验收',executable:${JSON.stringify(wrapper)},args:[],cwd:'',adapter:'opencode',model:'termnote/test'};m.data.settings.profiles.push(profile);await m.persist();const folder='TermNote-0.2验收-'+Date.now();await app.vault.createFolder(folder);const sessions=[await m.newNote(folder),await m.newNote(folder)];const view=await p.getView();for(const s of sessions){s.record.profile=profile.id;view.select(s);await m.launch(s);}return sessions.map(s=>({id:s.record.id,path:s.record.path,native:s.record.native,state:s.record.state,error:s.error}));})()`);
   ids=records.map(x=>x.id);assert.equal(records.length,2);assert.ok(records.every(x=>x.native&&!x.error),JSON.stringify(records));assert.notEqual(records[0].native.sessionID,records[1].native.sessionID);
   await new Promise(r=>setTimeout(r,2000));
-  for(let i=0;i<2;i++)await ev(`(async()=>{const p=app.plugins.plugins['agent-note-terminal'],s=p.manager.sessions.get(${JSON.stringify(ids[i])});(await p.getView()).select(s);s.write(${JSON.stringify('TERMNOTE-'+i+'-中文对话')});await new Promise(r=>setTimeout(r,300));s.write('\r');return true;})()`);
+  for(let i=0;i<2;i++)await ev(`(async()=>{const p=app.plugins.plugins['agent-note-terminal'],s=p.manager.sessions.get(${JSON.stringify(ids[i])});(await p.getView()).select(s);s.write(${JSON.stringify('TERMNOTE-'+i+'-中文对话')});await new Promise(r=>setTimeout(r,300));s.write(String.fromCharCode(13));return true;})()`);
   let results;
   for(let t=0;t<40;t++) {
     results=await ev(`JSON.stringify(${JSON.stringify(ids)}.map((id,i)=>{const s=app.plugins.plugins['agent-note-terminal'].manager.sessions.get(id),body=s.native.render();return {id,state:s.record.state,error:s.error,nativeError:s.nativeError,own:body.includes('TERMNOTE-'+i+'-中文对话'),answer:body.includes('本地模型验证通过'),other:body.includes('TERMNOTE-'+(1-i)+'-中文对话')};}))`);
@@ -34,7 +34,7 @@ try {
   // Remove the preset, then explicitly continue from the historical launch snapshot.
   await ev(`(async()=>{const p=app.plugins.plugins['agent-note-terminal'],m=p.manager;m.data.settings.profiles=m.data.settings.profiles.filter(p=>p.id!==${JSON.stringify(profileID)});await m.persist();const s=m.sessions.get(${JSON.stringify(ids[0])});(await p.getView()).select(s);await m.launch(s);return true;})()`);
   await new Promise(r=>setTimeout(r,1500));
-  await ev(`(async()=>{const s=app.plugins.plugins['agent-note-terminal'].manager.sessions.get(${JSON.stringify(ids[0])});s.write('TERMNOTE-继续原会话');await new Promise(r=>setTimeout(r,300));s.write('\r');return true;})()`);
+  await ev(`(async()=>{const s=app.plugins.plugins['agent-note-terminal'].manager.sessions.get(${JSON.stringify(ids[0])});s.write('TERMNOTE-继续原会话');await new Promise(r=>setTimeout(r,300));s.write(String.fromCharCode(13));return true;})()`);
   let resumed;
   for(let t=0;t<40;t++){resumed=await ev(`(()=>{const s=app.plugins.plugins['agent-note-terminal'].manager.sessions.get(${JSON.stringify(ids[0])});return JSON.stringify({native:s.record.native.sessionID,body:s.native.render(),error:s.error});})()`);if(resumed.body.includes('TERMNOTE-继续原会话')&&(resumed.body.match(/### Agent 回答/g)||[]).length>=2)break;await new Promise(r=>setTimeout(r,500));}
   assert.equal(resumed.native,before[0].native);assert.match(resumed.body,/TERMNOTE-继续原会话/);assert.equal((resumed.body.match(/TERMNOTE-0-中文对话/g)||[]).length,1);
