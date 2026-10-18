@@ -10,12 +10,14 @@ Run local agents in tabbed terminals and continuously save each session to a Mar
 
 - Obsidian 桌面端 1.14.4+（按实际验收版本设定）。仅支持 macOS 和 Windows，不支持移动端。
 - macOS：Python 3.9+；无需额外 Python 库。
-- Windows 10 1809+ / Windows 11：Python 3.9+，在同一个 Python 环境运行 `python -m pip install pywinpty`。Windows 后端已编写，尚需实机验证，不能视为已通过跨平台验收。
+- Windows 10 1809+ / Windows 11：Python 3.9+，在同一个 Python 环境运行 `python -m pip install pywinpty`。原生 ConPTY 后端、中文/Emoji、尺寸、持久化和进程清理已在真实 Windows CI 中通过；Windows 的 Obsidian 图形界面仍待人工试用。
 - 自己安装并登录需要使用的 Agent。插件不附带模型、Agent 或账户，不自动安装依赖。
 
 ## 安装与开始
 
 社区目录审核通过前，可先在 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 添加仓库 `ptwm-git/termnote` 安装和更新；也可下载 GitHub Release 的 ZIP 手动安装。仓库是否已发布、测试通过范围及剩余限制见 [验证记录](docs/VALIDATION.md)。
+
+[下载安装包](https://github.com/ptwm-git/termnote/releases/latest) · [发布状态](docs/RELEASE.md)
 
 1. 解压测试包，把 `agent-note-terminal` 文件夹放进知识库的 `.obsidian/plugins/`。
 2. 0.2.0 运行只需 `manifest.json`、`main.js`、`styles.css` 三个标准文件。Python 桥接源码已内嵌 main.js，不需要额外下载脚本；0.1.0 旧包仍需原来的 bridge.py。
@@ -38,6 +40,8 @@ Run local agents in tabbed terminals and continuously save each session to a Mar
 - 在 OpenCode 内使用 `/new` 或切换历史不会改变笔记的固定归档对象；新对话使用插件「＋」，确保一页一会话。打开历史标签只显示已有笔记与日志，继续或补齐需要明确操作。
 
 ## 多标签
+
+![OpenCode 终端与自动保存的笔记](docs/preview.png)
 
 - 首次调用绑定当前笔记；从书签打开笔记后也可同样调用。
 - 点击“＋”，在当前标签笔记所在目录创建“终端页面一.md”“终端页面二.md”……。序号每目录独立，重名跳过，重启后继续。

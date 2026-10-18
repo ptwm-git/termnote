@@ -2,7 +2,7 @@
 
 名称已于 2026-10-18 确定：中文「终端笔记」，英文 TermNote。原名 Agent Note Terminal；插件 ID 继续使用 `agent-note-terminal`，保留现有安装、设置与日志的绑定。
 
-状态：0.2.0 候选版已实现，macOS Obsidian 与实际 OpenCode 对话/恢复通过；Windows CI 和最终修复复审进行中，尚未公开发布。日期：2026-10-18。
+状态：0.2.0 已实现；macOS Obsidian、实际 OpenCode 对话/恢复、真实 Windows/macOS CI 及最终修复复审通过。公开分发与社区提交的最新状态见 [发布记录](docs/RELEASE.md)。日期：2026-10-18。
 
 用户已确定的目标：**任意 Agent、一页一会话、自动持续保存、关闭后仍有完整可读笔记**，支持 Windows 和 macOS 的 Obsidian 桌面端。
 

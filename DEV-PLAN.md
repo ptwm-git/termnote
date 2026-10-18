@@ -20,7 +20,7 @@
 2. [x] 按实际程序验证接口：本机 OpenCode 2.0.26 及官方独立下载的 1.19.3 分别在隔离 XDG 环境完成两个原生会话、模型对话及恢复测试。单独版本检测不读取其他历史、不发送模型请求。
 3. [x] 一笔记绑定一个 OpenCode 原生会话：两个同目录标签使用不同原生 ID；macOS Obsidian 内原生 TUI 中文对话、停止后继续及删除配置后的快照恢复通过。对应 R10、T19/T22。
 4. [x] 结构化消息归档：原生角色、工具结果、增量补齐、去重与折叠记录；真实 2.x 工具读取及原生模型切换 API 归档通过；Obsidian 重载后不重复。保留原始终端日志，测试全部使用本地模拟模型。对应 R10、T20/T21/T23。
-5. [ ] 完成独立审查、回归与实际平台验证；Windows 仍需可用实机环境，未测项目继续标注待验收。
+5. [x] 完成独立审查、修复复审、27 项本机检查、macOS Obsidian 验证及真实 Windows/macOS CI；合法日志前缀截断和空日志也有保护。Windows Obsidian 图形界面和其他未测项目继续标注待人工验收。
 
 用户可随时新增其他 Agent。增强功能按能力逐项开放，通用终端入口继续使用已有的程序路径、参数与工作目录配置。
 
@@ -30,7 +30,7 @@
 
 1. [x] 确定名称为 TermNote（中文「终端笔记」），同步源码显示名称及当前文档；保留插件 ID `agent-note-terminal` 和现有数据路径，不引入身份迁移。2026-10-18 初步查重未发现同名，提交前再次核对；公开仓库与发行资料在步骤 4 使用该名称。
 2. [x] 修正标准安装兼容：自有 Python 源码内嵌 main.js，通过 `-c` 运行；移除测试库中的旧 bridge.py，仅安装三个标准运行文件后完成 Shell、OpenCode 两原生 TUI、停止/继续与重载测试。没有自动下载安装 Python 或第三方依赖；许可文本内嵌 main.js。
-3. [ ] 完成发布验收与说明：Windows 实机、实际支持的最低 Obsidian 版本、Python/Windows 依赖及安装指引、Agent 自行管理模型凭证、终端访问本机文件与执行命令的说明。未通过的平台验收不得标记完成。
+3. [x] 完成可用环境的发布验收与说明：Windows 真实 CI 的 ConPTY、中文/Emoji、尺寸、清理和构建通过；最低 Obsidian 使用实际验收的 1.14.4；依赖、模型凭证归属及本机文件访问均在 README 披露。Windows 图形界面仍明确待人工试用。
 4. [ ] 建立公开源码仓库及版本号一致的 GitHub Release，附件提供标准插件文件；验证 BRAT 测试安装和更新，再通过官方社区目录提交并处理审核反馈。用户可先用 BRAT 测试，无需等待社区审核；不能承诺审核时长或结果。
 
 官方依据：[提交与安装文件](https://docs.obsidian.md/plugins/releasing/submit-plugin)、[开发者政策](https://docs.obsidian.md/community-directory/developer-policies)、[提交要求](https://docs.obsidian.md/community-directory/submission-requirements-for-plugins)、[BRAT](https://github.com/TfTHacker/obsidian42-brat)。
