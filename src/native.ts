@@ -52,15 +52,20 @@ export class NativeArchive {
   }
   render():string {
     if(!this.snapshot)return '';
-    const lines=['## OpenCode 对话记录','',`原生会话：\`${this.snapshot.binding.sessionID}\`。按原生消息归档；终端操作另存原始日志。`,''];
+    const lines=['## OpenCode 对话记录','',`> [!info]- 原生会话信息\n> 会话 ID：\`${this.snapshot.binding.sessionID}\`\n> 按原生消息归档；终端操作另存原始日志。`,''];
     if(!this.snapshot.messages.length)lines.push('尚无原生消息。','');
     for(const message of this.snapshot.messages) {
       const info=message.info??message,type=info.role??info.type??'unknown',id=messageID(message);
       const labels:Record<string,string>={user:'用户输入',assistant:'Agent 回答',shell:'命令执行','model-switched':'模型切换','agent-switched':'Agent 切换',system:'系统消息',compaction:'上下文整理'};
-      lines.push(`### ${labels[type]??'原生事件'} · ${id}`,'');
+      lines.push(`<!-- opencode-message: ${id} -->`,'');
+      if(!['user','assistant','shell'].includes(type)) {
+        lines.push(`> [!info]- ${labels[type]??'OpenCode 状态事件'}`,fence(JSON.stringify(message,null,2)).split('\n').map(line=>'> '+line).join('\n'),'');continue;
+      }
+      lines.push(`### ${labels[type]}`,'');
       const model=info.model??(info.modelID?{providerID:info.providerID,id:info.modelID}:undefined);
       if(model)lines.push('模型：'+JSON.stringify(model).replace(/\n/g,' '),'');
       if(typeof message.text==='string')lines.push(fence(message.text),'');
+      for(const key of ['files','agents','skills'])if(Array.isArray(message[key])&&message[key].length)lines.push('**关联内容**',fence(JSON.stringify({[key]:message[key]},null,2)),'');
       const parts=message.parts??message.content;
       if(Array.isArray(parts))for(const p of parts) {
         if(p.type==='text'||p.type==='reasoning')lines.push(p.type==='reasoning'?'**推理内容（Agent 已公开输出）**\n':'',fence(String(p.text??'')),'');

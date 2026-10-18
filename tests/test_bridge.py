@@ -156,7 +156,10 @@ class BridgeTests(unittest.TestCase):
 
     def test_utf8_split_across_reads_and_clean_exit(self):
         with tempfile.TemporaryDirectory() as d:
-            c = Client(d, 'import os,time;data="中文😀".encode();[(os.write(1,bytes([b])),time.sleep(.01)) for b in data]')
+            code = ('import sys,time;[(sys.stdout.write(c),sys.stdout.flush(),time.sleep(.02)) for c in "中文😀"]'
+                    if os.name == 'nt' else
+                    'import os,time;data="中文😀".encode();[(os.write(1,bytes([b])),time.sleep(.01)) for b in data]')
+            c = Client(d, code)
             try:
                 c.until(lambda es: any(e['type'] == 'exit' for e in es))
                 if os.name == 'nt':

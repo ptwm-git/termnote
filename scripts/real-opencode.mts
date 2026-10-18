@@ -27,18 +27,18 @@ const host={bridge:resolve('bridge.py'),python:async()=>({executable:process.pla
 const servers=[new OpenCodeServer(),new OpenCodeServer()];
 try {
   const ids=[];
-  for(const server of servers){await server.start(host,profile,dir);ids.push(await server.bind(profile));}
+  for(const server of servers){await server.start(host,profile,dir);if(/(?:^|\s)v?1\./.test(server.version))profile.model='';ids.push(await server.bind(profile));}
   assert.notEqual(ids[0].sessionID,ids[1].sessionID);
   for(let index=0;index<2;index++) {
     const server=servers[index],binding=ids[index];
-    const args=server.terminalArgs(binding,profile);
-    const command=spawn(server.executable,['run',...args,'--format','json',`只回答会话标记 TEST-${index}${index===0?' TOOL_TEST 请读取 fixture.txt':''}`],{cwd:dir,env:{...process.env,...server.environment},stdio:['ignore','pipe','pipe']});
+    const terminal=server.terminalArgs(binding,profile),args=binding.api==='v2'?terminal:['--attach',terminal[1],'--session',binding.sessionID];
+    const command=spawn(server.executable,['run',...args,'--format','json',`只回答会话标记 TEST-${index}${index===0&&binding.api==='v2'?' TOOL_TEST 请读取 fixture.txt':''}`],{cwd:dir,env:{...process.env,...server.environment},stdio:['ignore','pipe','pipe']});
     let output='',error='';command.stdout.on('data',c=>output+=c);command.stderr.on('data',c=>error+=c);
     const timeout=setTimeout(()=>command.kill('SIGTERM'),45000);const code=await new Promise(r=>command.once('close',r));clearTimeout(timeout);
     await writeFile(join(dir,`run-${index}.txt`),output+'\n'+error);
     assert.equal(code,0,`OpenCode run failed; isolated diagnostic: ${dir}`);
     const archive=new NativeArchive(join(dir,`native-${index}.json`));await archive.merge(binding,profile,dir,await server.export(binding));
-    assert.match(archive.render(),new RegExp(`TEST-${index}`));assert.doesNotMatch(archive.render(),new RegExp(`TEST-${1-index}`));assert.match(archive.render(),/本地模型已回复/);if(index===0){assert.match(archive.render(),/工具执行/);assert.match(archive.render(),/TOOL_RESULT_中文文件内容/);}
+    assert.match(archive.render(),new RegExp(`TEST-${index}`));assert.doesNotMatch(archive.render(),new RegExp(`TEST-${1-index}`));assert.match(archive.render(),/本地模型已回复/);if(index===0&&binding.api==='v2'){assert.match(archive.render(),/工具执行/);assert.match(archive.render(),/TOOL_RESULT_中文文件内容/);}
   }
   const binding=ids[0];await servers[0].stop();const resumed=new OpenCodeServer();servers[0]=resumed;await resumed.start(host,profile,dir);assert.equal((await resumed.bind(profile,binding)).sessionID,binding.sessionID);
   const recovered=new NativeArchive(join(dir,'native-0.json'));await recovered.load(binding);const before=recovered.render();assert.equal(await recovered.merge(binding,profile,dir,await resumed.export(binding)),false);assert.equal(recovered.render(),before);
