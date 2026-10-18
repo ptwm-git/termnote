@@ -1,7 +1,7 @@
 import { spawn,type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createReadStream,existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { stat } from 'node:fs/promises';
+import { stat,open } from 'node:fs/promises';
 import type { BridgeEvent,RecordData,Profile } from './types';
 import { STATE_LABEL } from './types';
 import { Transcript } from './transcript';
@@ -9,7 +9,7 @@ import { NoteWriter } from './writer';
 import {bridgeArgs,type PythonCommand} from './runtime';
 import {NativeArchive} from './native';
 import {OpenCodeServer} from './opencode';
-import {region} from './note';
+import {region,hash} from './note';
 export interface SessionHost {
   python():Promise<PythonCommand>; bridge:string;
   changed(session:Session,event?:BridgeEvent):void;
@@ -36,6 +36,10 @@ export class Session {
   private closing=false;
   constructor(readonly record:RecordData,readonly journal:string,readonly writer:NoteWriter,readonly host:SessionHost) {this.native=new NativeArchive(journal.replace(/\.jsonl$/,'.opencode.json'));}
   get live():boolean { return this.record.state==='running'||this.record.state==='starting'; }
+  async initialize():Promise<void> {
+    try {const file=await open(this.journal,'wx',0o600);try{await file.sync();}finally{await file.close();}}
+    catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
+  }
   private async ingest(event:BridgeEvent,replay=false):Promise<void> {
     if(event.seq>0)this.seq=event.seq; this.revision++;
     if(event.type==='output' && event.data!==undefined) await this.transcript.feed(event.data);
@@ -58,7 +62,11 @@ export class Session {
       if(this.native.snapshot) {this.record.native=this.native.snapshot.binding;this.record.launch=this.native.snapshot.profile;this.record.cwd=this.native.snapshot.cwd;}
     }catch(error){this.nativeBlocked=true;throw error;}
     if(!existsSync(this.journal)) {
-      if(this.record.state!=='idle'||region(await this.writer.access.read(this.record.path),this.record.id)) {
+      const old=region(await this.writer.access.read(this.record.path),this.record.id),metadata=old?.text.split('\n\n')[1]??'';
+      const knownEmpty=old&&this.record.lastHash===hash(old.text)&&!this.record.native&&metadata.startsWith('> [!info]- 会话信息')&&metadata.split('\n').includes('> - 已归档事件：0');
+      // Narrow migration for authenticated, zero-event placeholders from 0.1.0.
+      if(knownEmpty){await this.initialize();return;}
+      if(this.record.state!=='idle'||old) {
         this.error='原始日志不存在；已保留笔记，不能重建历史。请找回日志或新建笔记';this.record.state='failed';throw new Error(this.error);
       }
       return;
@@ -72,7 +80,7 @@ export class Session {
         if(truncated) throw new Error('日志中部损坏，已保留原文件并停止自动恢复');
         let event:BridgeEvent;
         try {event=JSON.parse(line);} catch {truncated=true;continue;}
-        if(!Number.isInteger(event.seq) || event.seq<=this.seq) throw new Error('日志事件顺序异常');
+        if(!Number.isInteger(event.seq) || event.seq!==this.seq+1) throw new Error('日志事件序号不连续，已保留笔记并停止自动重建');
         await this.ingest(event,true);
       }
       if(truncated) this.error='已恢复完整日志；末尾存在中断时未写完整的数据';
@@ -93,9 +101,12 @@ export class Session {
   }
   private async startInternal(profile:Profile,cwd:string):Promise<void> {
     try {
+      await this.initialize();
       if(!(await stat(cwd)).isDirectory()) throw new Error('工作目录不是文件夹');
       const python=await this.host.python();
-      this.record.launch??=structuredClone(profile);this.record.cwd=cwd;
+      if(!this.seq&&!this.record.native)this.record.launch=structuredClone(profile);
+      else this.record.launch??=structuredClone(profile);
+      this.record.cwd=cwd;
       let executable=profile.executable,args=[...profile.args],env:Record<string,string>={};
       if(profile.adapter==='opencode') {
         const server=new OpenCodeServer();this.server=server;

@@ -104,6 +104,7 @@ class WindowsTerminal:
         from shutil import which
         try:
             from winpty import PtyProcess
+            from winpty.enums import Backend
         except ImportError as exc:
             raise RuntimeError('当前 Python 缺少 pywinpty：请用同一解释器运行 -m pip install pywinpty') from exc
         executable = which(config['executable'])
@@ -121,7 +122,7 @@ class WindowsTerminal:
         self.process = PtyProcess.spawn(
             [sys.executable, '-u', '-c', bootstrap, executable, *config.get('args', [])], cwd=config['cwd'],
             env=dict(os.environ, TERM='xterm-256color', COLORTERM='truecolor'),
-            dimensions=(config.get('rows', 30), config.get('cols', 100)), backend=1)
+            dimensions=(config.get('rows', 30), config.get('cols', 100)), backend=Backend.ConPTY)
         self.pid = self.process.pid
 
     def resize(self, cols, rows):

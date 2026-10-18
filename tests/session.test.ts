@@ -10,15 +10,31 @@ import type {RecordData} from '../src/types';
 import {OpenCodeServer} from '../src/opencode';
 import {patchNote} from '../src/note';
 test('缺失或损坏原始日志时，自动保存及关闭不得覆盖唯一历史笔记',async()=>{
-  for(const corrupt of [false,true]) {
+  for(const corrupt of ['missing','invalid','gap']) {
     const dir=await mkdtemp(join(tmpdir(),'termnote-preserve-')),id=randomUUID(),journal=join(dir,'missing.jsonl');
     let text=patchNote('# 手工正文\n',id,'唯一历史对话，必须保留',null);const before=text;
-    if(corrupt)await writeFile(journal,'{"type":"output","seq":1,"time":"now","data":"部分数据"}\n坏数据\n{}\n');
+    if(corrupt==='invalid')await writeFile(journal,'{"type":"output","seq":1,"time":"now","data":"部分数据"}\n坏数据\n{}\n');
+    if(corrupt==='gap')await writeFile(journal,'{"type":"start","seq":1,"time":"now"}\n{"type":"exit","seq":3,"time":"now"}\n');
     const record:RecordData={id,path:'A.md',visible:true,profile:'shell',created:'now',state:'ended',cwd:dir,executable:'/bin/sh',args:[]};
     const session=new Session(record,journal,new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'A.md'),{bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}});
     try{await assert.rejects(session.restore());await session.flush();await session.stop();assert.equal(text,before);assert.ok(session.historyError);}
     finally{session.dispose();await rm(dir,{recursive:true,force:true});}
   }
+});
+test('首次预检查失败后重载，可修正配置并重试；空笔记先建持久日志',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'termnote-retry-')),id=randomUUID(),journal=join(dir,'events.jsonl');let text='# 新会话\n';
+  const access={read:async()=>text,update:async(_p:string,fn:(t:string)=>string)=>{text=fn(text);}};
+  const record:RecordData={id,path:'A.md',visible:true,profile:'test',created:'now',state:'idle',cwd:'',executable:'',args:[]};
+  const host={bridge:resolve('bridge.py'),python:async()=>({executable:process.platform==='win32'?'python':'python3',prefix:[],description:'test'}),changed:()=>{}};
+  const profile={id:'test',name:'测试',executable:'missing',args:[],cwd:dir};
+  const original=new Session(record,journal,new NoteWriter(access,id,'A.md'),host);
+  let recovered:Session|undefined;
+  try{
+    await original.start(profile,join(dir,'missing-cwd'));assert.equal(record.state,'failed');assert.equal(await readFile(journal,'utf8'),'');
+    recovered=new Session(structuredClone(record),journal,new NoteWriter(access,id,'A.md',record.lastHash),host);await recovered.restore();assert.equal(recovered.historyError,'');
+    await recovered.start({...profile,executable:process.execPath,args:['-e','console.log("RETRY_OK")']},dir);
+    const until=Date.now()+10000;while(recovered.live&&Date.now()<until)await new Promise(r=>setTimeout(r,20));await recovered.stop();assert.match(text,/RETRY_OK/);
+  }finally{await recovered?.stop();original.dispose();recovered?.dispose();await rm(dir,{recursive:true,force:true});}
 });
 test('手动补齐、继续和结束互斥，不覆盖或遗留私有服务',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'termnote-lifecycle-'));let text='# 历史\n';

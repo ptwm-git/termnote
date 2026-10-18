@@ -83,7 +83,7 @@ export class Manager {
     const profile=this.data.settings.defaultProfile;
     const record:RecordData={id,path:file.path,profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
     const session=this.make(record);this.data.records.push(record);
-    if(oldId===id) await session.restore();
+    if(oldId===id) await session.restore();else await session.initialize();
     await session.flush();await this.persist();this.changed();return session;
   }
   newNote(folder:string):Promise<Session> {return this.serial(async()=>{
@@ -101,14 +101,15 @@ export class Manager {
     if(session.live) return;
     if(session.saveError) {new Notice('请先恢复笔记同步：'+session.saveError);return;}
     if(profileId&&session.record.launch&&profileId!==session.record.launch.id)throw new Error('更换 Agent 请创建新笔记，已有会话保留原配置');
-    const template=session.record.launch??this.data.settings.profiles.find(p=>p.id===(profileId??session.record.profile));
+    const current=this.data.settings.profiles.find(p=>p.id===(profileId??session.record.profile));
+    const template=(!session.seq&&!session.record.native)?current??session.record.launch:session.record.launch??current;
     if(!template) throw new Error('请先添加启动配置');
     const profile:Profile={...template,args:[...template.args]};
     if(!profile.executable.trim()) {
       if(profile.adapter==='opencode')throw new Error('请在 OpenCode 配置中填写程序路径');
       profile.executable=process.platform==='win32'?(process.env.ComSpec||'cmd.exe'):(process.env.SHELL||'/bin/zsh');profile.args=process.platform==='win32'?[]:['-l'];
     }
-    const cwd=session.record.launch?(session.record.cwd||session.native.snapshot?.cwd||profile.cwd):profile.cwd.trim()?resolve(profile.cwd):join(this.base,parentPath(session.record.path));
+    const cwd=session.record.launch&&(session.seq>0||session.record.native)?(session.record.cwd||session.native.snapshot?.cwd||profile.cwd):profile.cwd.trim()?resolve(profile.cwd):join(this.base,parentPath(session.record.path));
     await session.start(profile,cwd);await this.persist();this.changed();
   }
   async selectProfile(session:Session,profileId:string):Promise<Session> {
