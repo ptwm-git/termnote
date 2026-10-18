@@ -83,6 +83,9 @@ export class Session {
         if(!Number.isInteger(event.seq) || event.seq!==this.seq+1) throw new Error('日志事件序号不连续，已保留笔记并停止自动重建');
         await this.ingest(event,true);
       }
+      const saved=region(await this.writer.access.read(this.record.path),this.record.id),metadata=saved?.text.split('\n\n')[1]??'';
+      const savedSequence=/^> - 已归档事件：(\d+)$/m.exec(metadata);
+      if(savedSequence&&Number(savedSequence[1])>this.seq)throw new Error('原始日志短于笔记中已保存的记录；已保留笔记，不能用残缺日志重建');
       if(truncated) this.error='已恢复完整日志；末尾存在中断时未写完整的数据';
     } finally { lines.close();stream.destroy(); }
   }

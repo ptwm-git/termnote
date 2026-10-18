@@ -10,11 +10,13 @@ import type {RecordData} from '../src/types';
 import {OpenCodeServer} from '../src/opencode';
 import {patchNote} from '../src/note';
 test('缺失或损坏原始日志时，自动保存及关闭不得覆盖唯一历史笔记',async()=>{
-  for(const corrupt of ['missing','invalid','gap']) {
+  for(const corrupt of ['missing','invalid','gap','prefix','empty']) {
     const dir=await mkdtemp(join(tmpdir(),'termnote-preserve-')),id=randomUUID(),journal=join(dir,'missing.jsonl');
-    let text=patchNote('# 手工正文\n',id,'唯一历史对话，必须保留',null);const before=text;
+    let text=patchNote('# 手工正文\n',id,'## 终端会话记录\n\n> [!info]- 会话信息\n> - 已归档事件：3\n\n唯一历史对话，必须保留',null);const before=text;
     if(corrupt==='invalid')await writeFile(journal,'{"type":"output","seq":1,"time":"now","data":"部分数据"}\n坏数据\n{}\n');
     if(corrupt==='gap')await writeFile(journal,'{"type":"start","seq":1,"time":"now"}\n{"type":"exit","seq":3,"time":"now"}\n');
+    if(corrupt==='prefix')await writeFile(journal,'{"type":"start","seq":1,"time":"now"}\n');
+    if(corrupt==='empty')await writeFile(journal,'');
     const record:RecordData={id,path:'A.md',visible:true,profile:'shell',created:'now',state:'ended',cwd:dir,executable:'/bin/sh',args:[]};
     const session=new Session(record,journal,new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'A.md'),{bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}});
     try{await assert.rejects(session.restore());await session.flush();await session.stop();assert.equal(text,before);assert.ok(session.historyError);}
