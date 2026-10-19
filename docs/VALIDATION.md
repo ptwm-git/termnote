@@ -7,7 +7,9 @@
 - 独立test-vault中实际验证工具栏首位/默认ON、OFF笔记字节与预览不变、再ON不补录、两标签独立、冲突取消/同目录完整备份恢复、区域外保留、双编辑器一致更新、OFF停止保留。最终修正版通过，原96ID/94笔记保持；全部进程已停止，正式Documents知识库未写入/重载。脚本scripts/obsidian-v034.mjs。冷重载99ID、97笔记、99日志、41可见标签与activeId保持，0自动运行、0健康错误，仅2个已有受保护missing记录维持原状。
 - 实际系统Shell内运行OpenCode2.0.26，隔离XDG/私有服务和本地模拟模型，未使用用户模型凭证/额度；模型菜单/导航/variant、前两轮同文回答、第三轮OFF和第四轮再ON通过，4次本地请求，OFF文件字节不变、无补录。测试前临时调大终端区域，结束恢复原字号/比例；较小区域从未显示的内容不当作可恢复消息。脚本scripts/obsidian-v034-opencode.mjs（用tsx运行）。
 - 对截图所涉正式库记录仅做只读摘要核验：边界完整，区域哈希与已保存来源不一致，未据此归咎用户手动修改。前2500事件只读对照，底部esc interrupt重复从66份降为0份；保留原笔记/日志，不向正式库安装或改动运行会话。
-- fresh审查发现并修正OFF重入/重排与重复误删、长行收短、跨事务边界、普通行重写、多次开关、截断日志、离线/实时日志故障、双边界缺失和编辑器失败保全。独立最终修复复核PASS，92项相关测试及分包/逐字符CSI探针通过；两平台CI/来源证明、BRAT及社区正式扫描待完成，不以候选通过冒充发行验收。
+- fresh审查发现并修正OFF重入/重排与重复误删、长行收短、跨事务边界、普通行重写、多次开关、截断日志、离线/实时日志故障、双边界缺失和编辑器失败保全。独立最终修复复核PASS，92项相关测试及分包/逐字符CSI探针通过。源码、发行与升级的独立证据如下。
+- 最终源码54473c6a17951b01057ad5d21deaf28de7280be7的[源码CI39236443653](https://github.com/ptwm-git/termnote/actions/runs/39236443653)两平台成功：macOS Node109，Windows Node106通过/3个POSIX用例跳过，Python各7项与Windows真实OpenCode1.19.3协议通过。准确SHA社区预览Completed、无Error，Warning保留。
+- [标签检查39236772715](https://github.com/ptwm-git/termnote/actions/runs/39236772715)与[发行CI39236772968](https://github.com/ptwm-git/termnote/actions/runs/39236772968)成功，附件校验/ZIP六文件/CRC/本机构建字节对照及准确0.3.4标签来源证明通过后已公开。实际BRAT从禁用0.3.3运行文件更新到公开0.3.4，99ID/97笔记哈希、设置/对话/OFF状态均保持，0自动运行/健康错误；运行文件与公开附件一致。社区0.3.4正式扫描Completed、无Error，主程序/样式来源证明Pass，平台逐字节重建main.js成功，依赖/网络/混淆无阻断；公开Current version为0.3.4且Add to Obsidian链接可用。保留既有Warning/Recommendation；Windows Obsidian图形界面仍待人工试用。
 
 
 ## 0.3.3 字体与初始化 — 2026-10-19

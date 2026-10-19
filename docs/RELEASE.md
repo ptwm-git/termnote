@@ -1,12 +1,24 @@
 # TermNote 发布记录
 
-名称：TermNote · 终端笔记。插件 ID：`agent-note-terminal`。日期：2026-10-19。当前公开发行版本：**0.3.3**。
+名称：TermNote · 终端笔记。插件 ID：`agent-note-terminal`。日期：2026-10-19。当前公开发行版本：**0.3.4**。
 
 ## 安装入口
 
-- [GitHub 0.3.3 发行版](https://github.com/ptwm-git/termnote/releases/tag/0.3.3) 已公开，含三个标准运行文件、手动安装 ZIP 和 SHA256SUMS。
-- BRAT 添加仓库 `ptwm-git/termnote`。已在独立测试库将安装文件置为0.3.1，再由BRAT在线更新到公开0.3.3；旧运行文件在更新前保持禁用，未启动降级程序。84个会话ID、82份现存笔记、完整设置均保留，记录内容与升级前完全一致，运行文件与CI附件匹配。
-- [Obsidian 社区条目](https://community.obsidian.md/plugins/agent-note-terminal) 的0.3.3正式扫描与固定源码预览均Completed、无Error，主程序/样式来源证明Pass，平台逐字节重建main.js成功，公开Add to Obsidian安装入口可用。
+- [GitHub 0.3.4 发行版](https://github.com/ptwm-git/termnote/releases/tag/0.3.4) 已公开，含三个标准运行文件、手动安装 ZIP 和 SHA256SUMS。
+- BRAT 添加仓库 `ptwm-git/termnote`。独立测试库实际从禁用的0.3.3运行文件更新到公开0.3.4，没有运行降级代码；99个ID、97份现存笔记哈希、完整设置/对话及OFF状态保留，0自动运行、0健康错误，运行文件与公开附件匹配。
+- [Obsidian社区条目](https://community.obsidian.md/plugins/agent-note-terminal)现显示0.3.4，固定源码预览与正式扫描均Completed、无Error；来源证明Pass、平台逐字节重建主程序成功，公开Add to Obsidian链接可用。
+
+## 0.3.4 发行证据
+
+- 文件名右侧首个操作「同步ON/OFF」，每标签独立默认ON、持久有序边界。OFF保持已保存Markdown/预览，再ON、停止/导出不补录OFF内容；原始恢复日志继续保留，开关不是隐私擦除。
+- 对截图记录的只读核验只证明区域与已保存来源不一致，不归咎用户手动修改。新入口先在同目录备份整份现有笔记，再原子恢复本会话区域；绑定/边界/日志不完整、写入失败和并发变化不静默覆盖。
+- 全屏重入/反序/换行重排、跨同步绘制事务和多次切换有回归；普通行按实际打印列区分ON与OFF，CSI P/@/IRM及分包一致性通过，真实重复回答保留。旧v2升级加载/退出保持原件。
+- 最终源码与0.3.4标签：`54473c6a17951b01057ad5d21deaf28de7280be7`。固定源码社区预览Completed、无Error；[源码CI39236443653](https://github.com/ptwm-git/termnote/actions/runs/39236443653)成功后创建标签。
+- [标签检查39236772715](https://github.com/ptwm-git/termnote/actions/runs/39236772715)和[发行CI39236772968](https://github.com/ptwm-git/termnote/actions/runs/39236772968)成功。macOS Node109，Windows Node106通过/3个POSIX用例跳过，Python各7项和Windows真实OpenCode1.19.3协议通过。官方ESLint 0 Error/107 Warning。
+- 独立最终修复复核PASS。真实macOS GUI首位按钮/两标签、OFF字节不变、恢复取消与完整备份、双编辑器、OFF停止均通过；普通系统Shell内实际OpenCode2.0.26模型/variant、同文回答、OFF和再ON四轮本地请求通过，不使用用户模型额度。最终冷重载99ID、97笔记、99日志、41可见标签与activeId保持，0自动运行/健康错误，2个既有保护missing维持原状。
+- 下载CI草稿附件后，SHA256SUMS、ZIP CRC/六文件、本机构建逐字节对照、main.js/styles.css准确0.3.4标签与源码SHA来源证明均通过，随后公开发布。ZIP SHA256：`4cefa788584b9ccf8b7192af8cd401b2119bc0f334448e37149f5c95a6771e92`。
+- 实际BRAT 0.3.3→0.3.4升级通过；正式Documents知识库仅做只读诊断，未安装、写入或重载其运行会话。
+- 社区0.3.4正式扫描Completed、无Error：主程序/样式来源证明Pass，依赖/网络/混淆无阻断；Build reproduced the release main.js byte-for-byte。公开Current version为0.3.4，安装链接为`obsidian://show-plugin?id=agent-note-terminal`。既有Warning/Recommendation保留，不描述为零警告。
 
 ## 0.3.3 发行证据
 

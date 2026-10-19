@@ -14,4 +14,4 @@
 
 独立最终修复复核 **PASS**：92项相关测试、所有原Finding独立探针、CSI P/@/IRM整包/分包/逐字符一致性通过，无新增阻断。本机完整检查109项Node、7项Python、严格类型与构建通过；官方ESLint 0 Error/107 Warning。
 
-实际macOS独立测试库GUI/OpenCode2.0.26及冷重载通过，证据范围见[验证记录](VALIDATION.md)。Windows Obsidian GUI与未知CLI的语义完整性不作为已验收；CI/发行/升级/社区证据在发布完成后补入该记录。
+实际macOS独立测试库GUI/OpenCode2.0.26及冷重载通过，证据范围见[验证记录](VALIDATION.md)。Windows Obsidian GUI与未知CLI的语义完整性不作为已验收；源码CI39236443653、发行CI39236772968与标签检查39236772715通过；公开0.3.4、附件与精确标签来源证明、BRAT升级和社区正式扫描/逐字节重建均已验收，证据已写入发布与验证记录。
