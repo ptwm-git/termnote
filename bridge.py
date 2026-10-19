@@ -328,6 +328,22 @@ def main():
                     kind = message.get('type')
                     if kind == 'write':
                         terminal.write(message['data'])
+                    elif kind == 'interaction':
+                        action = message.get('action')
+                        if action in ('edit', 'submit', 'cancel'):
+                            fields = dict(action=action)
+                            if action == 'edit':
+                                count = message.get('inputLines')
+                                if isinstance(count, int) and 1 <= count <= 262144:
+                                    fields['inputLines'] = count
+                            if action == 'submit':
+                                for key in ('data', 'echo'):
+                                    value = message.get(key)
+                                    if isinstance(value, str) and len(value) <= 262144:
+                                        fields[key] = value
+                                if message.get('inputKind') in ('input', 'operation'):
+                                    fields['inputKind'] = message['inputKind']
+                            journal.emit('interaction', **fields)
                     elif kind == 'resize':
                         cols, rows = int(message['cols']), int(message['rows'])
                         if not (2 <= cols <= 1000 and 2 <= rows <= 500):

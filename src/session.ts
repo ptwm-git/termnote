@@ -5,18 +5,22 @@ import { stat,open } from 'node:fs/promises';
 import type { BridgeEvent,RecordData,Profile } from './types';
 import { STATE_LABEL } from './types';
 import { Transcript } from './transcript';
+import {LegacyTranscript} from './legacy-transcript';
+import {InputDraft} from './input';
 import { NoteWriter } from './writer';
 import {bridgeArgs,type PythonCommand} from './runtime';
 import {NativeArchive} from './native';
 import {OpenCodeServer} from './opencode';
 import {region,hash} from './note';
+import {checkedEvent} from './event';
 export interface SessionHost {
   python():Promise<PythonCommand>; bridge:string;
   changed(session:Session,event?:BridgeEvent):void;
   persist?():Promise<void>;
 }
 export class Session {
-  readonly transcript=new Transcript();
+  readonly transcript:Transcript|LegacyTranscript;
+  private input=new InputDraft();private writes:Promise<void>=Promise.resolve();
   child?:ChildProcessWithoutNullStreams;
   error=''; saveError=''; savedAt=''; seq=0; revision=0; savedRevision=-1;
   private events:Promise<void>=Promise.resolve();
@@ -25,7 +29,7 @@ export class Session {
   private stopping=false;
   readonly native:NativeArchive;
   nativeError='';
-  historyError='';
+  historyError='';private historyIncomplete=false;legacyFrozen=false;
   private nativeBlocked=false;
   private server?:OpenCodeServer;
   private nativeTimer?:ReturnType<typeof setInterval>;
@@ -34,7 +38,7 @@ export class Session {
   private refreshing?:Promise<void>;
   private stopTask?:Promise<void>;
   private closing=false;
-  constructor(readonly record:RecordData,readonly journal:string,readonly writer:NoteWriter,readonly host:SessionHost) {this.native=new NativeArchive(journal.replace(/\.jsonl$/,'.opencode.json'));}
+  constructor(readonly record:RecordData,readonly journal:string,readonly writer:NoteWriter,readonly host:SessionHost) {this.transcript=record.transcriptVersion===2?new Transcript():new LegacyTranscript();this.native=new NativeArchive(journal.replace(/\.jsonl$/,'.opencode.json'));}
   get live():boolean { return this.record.state==='running'||this.record.state==='starting'; }
   async initialize():Promise<void> {
     try {const file=await open(this.journal,'wx',0o600);try{await file.sync();}finally{await file.close();}}
@@ -43,6 +47,7 @@ export class Session {
   private async ingest(event:BridgeEvent,replay=false):Promise<void> {
     if(event.seq>0)this.seq=event.seq; this.revision++;
     if(event.type==='output' && event.data!==undefined) await this.transcript.feed(event.data);
+    if(event.type==='interaction'&&this.transcript instanceof Transcript)await this.transcript.interaction(event);
     if(event.type==='resize' && event.cols && event.rows) this.transcript.resize(event.cols,event.rows);
     if(event.type==='start') {
       if(event.cols && event.rows) this.transcript.resize(event.cols,event.rows);
@@ -79,14 +84,15 @@ export class Session {
         if(!line.trim()) continue;
         if(truncated) throw new Error('日志中部损坏，已保留原文件并停止自动恢复');
         let event:BridgeEvent;
-        try {event=JSON.parse(line);} catch {truncated=true;continue;}
+        let parsed:unknown;try {parsed=JSON.parse(line);} catch {truncated=true;continue;}event=checkedEvent(parsed);
         if(!Number.isInteger(event.seq) || event.seq!==this.seq+1) throw new Error('日志事件序号不连续，已保留笔记并停止自动重建');
         await this.ingest(event,true);
       }
       const saved=region(await this.writer.access.read(this.record.path),this.record.id),metadata=saved?.text.split('\n\n')[1]??'';
       const savedSequence=/^> - 已归档事件：(\d+)$/m.exec(metadata);
       if(savedSequence&&Number(savedSequence[1])>this.seq)throw new Error('原始日志短于笔记中已保存的记录；已保留笔记，不能用残缺日志重建');
-      if(truncated) this.error='已恢复完整日志；末尾存在中断时未写完整的数据';
+      if(truncated) {this.historyIncomplete=true;this.error='已恢复完整日志；末尾存在中断时未写完整的数据';}
+      if(this.record.transcriptVersion!==2&&this.seq>0&&saved){await this.writer.init();this.legacyFrozen=true;this.savedRevision=this.revision;}
     } finally { lines.close();stream.destroy(); }
   }
   async start(profile:Profile,cwd:string):Promise<void> {
@@ -131,7 +137,7 @@ export class Session {
       lines.on('line',line=>{
         child.stdout.pause();
         this.events=this.events.then(async()=>{
-          const event:BridgeEvent=JSON.parse(line);
+          const event=checkedEvent(JSON.parse(line));
           await this.ingest(event);
           if(event.seq<0) {this.record.journalError=event.message||'日志写入失败';void this.stop();}
         }).catch(error=>{this.error=(error as Error).message;this.record.state='failed';this.host.changed(this);void this.stop();})
@@ -151,7 +157,7 @@ export class Session {
           }).catch(error=>{this.error=(error as Error).message;this.host.changed(this);}).finally(()=>{this.closing=false;resolve();});
         });
       });
-      child.stdin.on('error',error=>{this.error=error.message;this.host.changed(this);});
+      child.stdin.on('error',error=>{if((error as NodeJS.ErrnoException).code==='EPIPE'&&(this.stopping||this.record.state==='ended'))return;this.error=error.message;this.host.changed(this);});
       child.stdin.write(JSON.stringify({executable,args,cwd,journal:this.journal,cols:this.transcript.terminal.cols,rows:this.transcript.terminal.rows})+'\n');
       if(this.server)this.nativeTimer=setInterval(()=>{void this.syncNative().catch(()=>{});},2000);
     } catch(error) {
@@ -193,12 +199,55 @@ export class Session {
       await this.syncNative();await this.flush();
     }finally{if(temporary){await server.stop();if(this.server===server)this.server=undefined;}}
   }
-  write(data:string):void { if(this.record.state==='running') this.send({type:'write',data}); }
+  write(data:string):void {
+    if(this.record.state!=='running')return;
+    if(!(this.transcript instanceof Transcript)){this.send({type:'write',data});return;}
+    this.writes=this.writes.then(()=>this.writeTracked(data)).catch(error=>{this.error='输入归档失败：'+(error as Error).message;this.host.changed(this);});
+  }
+  private async writeTracked(data:string):Promise<void>{
+    const transcript=this.transcript;if(!(transcript instanceof Transcript)||this.record.state!=='running')return;
+    let pending='',inputLines=this.input.lineCount;const flush=()=>{if(pending){this.send({type:'write',data:pending});pending='';}};
+    for(const token of this.input.tokens(data)){
+      const action=this.input.accept(token);
+      const nextLines=this.input.lineCount;
+      if(action==='edit'||nextLines!==inputLines){flush();this.send({type:'interaction',action:'edit',inputLines:nextLines});inputLines=nextLines;}
+      if(action==='cancel'){flush();this.send({type:'interaction',action:'cancel'});}
+      if(action==='submit'){
+        flush();let visible={text:'',echo:''};
+        // Let the terminal acknowledge the last typed/pasted characters before Enter.
+        for(let tries=0;tries<12;tries++){
+          await new Promise(resolve=>setTimeout(resolve,15));await this.events;
+          visible=await transcript.visibleInput(this.input.text,this.input.unknown);
+          if(visible.text||!this.input.text)break;
+        }
+        const operation=this.input.navigation&&transcript.fullScreen;
+        this.send({type:'interaction',action:'submit',...(operation?{data:'确认选择',inputKind:'operation'}:visible.text?{data:visible.text,inputKind:'input',echo:visible.echo}:{echo:visible.echo})});
+        this.input.reset();this.send({type:'write',data:token});
+      }else pending+=token;
+    }
+    flush();
+  }
   resize(cols:number,rows:number):void {
     if(cols===this.transcript.terminal.cols && rows===this.transcript.terminal.rows) return;
     if(this.live) this.send({type:'resize',cols,rows});
   }
   private send(event:object):void { if(this.child?.stdin.writable) this.child.stdin.write(JSON.stringify(event)+'\n'); }
+  async compactContent():Promise<string>{
+    await this.drain();await this.flush();
+    if(this.historyIncomplete||this.historyError||this.saveError||this.record.journalError)throw new Error('请先恢复完整记录：'+(this.historyError||this.saveError||this.record.journalError||'日志末尾不完整'));
+    if(this.native.snapshot)return this.native.render();
+    const limit=this.seq,projection=new Transcript(),stream=createReadStream(this.journal,{encoding:'utf8'}),lines=createInterface({input:stream,crlfDelay:Infinity});let seq=0;
+    try{
+      for await(const line of lines){
+        if(!line.trim())continue;if(seq===limit&&this.live)break;
+        const event=checkedEvent(JSON.parse(line));if(event.seq!==seq+1)throw new Error('原始日志事件不连续，不能生成完整副本');seq=event.seq;
+        if(event.type==='output'&&event.data!==undefined)await projection.feed(event.data);
+        if(event.type==='interaction')await projection.interaction(event);
+        if((event.type==='start'||event.type==='resize')&&event.cols&&event.rows)projection.resize(event.cols,event.rows);
+      }
+      if(seq!==limit)throw new Error('原始日志不完整，不能生成副本');return await projection.render();
+    }finally{lines.close();stream.destroy();projection.dispose();}
+  }
   async body():Promise<string> {
     return '## 终端会话记录\n\n'+
       `> [!info]- 会话信息 · ${STATE_LABEL[this.record.state]}\n> - 会话：\`${this.record.id}\`\n> - 创建：${this.record.created}\n> - 状态：${STATE_LABEL[this.record.state]}\n`+
@@ -209,13 +258,14 @@ export class Session {
       (this.nativeError?`> 原生记录待同步：${this.nativeError.replace(/\n/g,' ')}\n\n`:'')+await this.content();
   }
   async content():Promise<string> {
+    if(this.legacyFrozen){const saved=region(await this.writer.access.read(this.record.path),this.record.id);if(saved)return saved.text;}
     const terminal=await this.transcript.render();
     return this.native.snapshot?this.native.render()+'\n> [!abstract]- 终端显示记录（含界面重绘）\n'+terminal.split('\n').map(line=>'> '+line).join('\n')+'\n':terminal;
   }
   flush():Promise<void> {
     this.saveQueue=this.saveQueue.then(async()=>{
       await this.events;
-      if(this.historyError||this.savedRevision===this.revision || this.record.state==='missing') return;
+      if(this.legacyFrozen||this.historyError||this.savedRevision===this.revision || this.record.state==='missing') return;
       const revision=this.revision;
       try {
         const body=await this.body();
@@ -234,8 +284,9 @@ export class Session {
   private async stopInternal():Promise<void> {
     if(this.refreshing)await this.refreshing.catch(()=>{});
     if(this.startingTask)await this.startingTask;
+    await this.writes;
     if(this.child) {
-      this.send({type:'stop'});this.child.stdin.end();
+      if(this.record.state!=='ended')this.send({type:'stop'});this.child.stdin.end();
       const child=this.child;
       const timer=setTimeout(()=>{if(this.child===child) child.kill();},6000);
       await this.exitPromise;
@@ -243,6 +294,6 @@ export class Session {
     } else {await this.finishNative();if(this.live) {this.record.state='ended';this.revision++;}}
     await this.flush();
   }
-  async drain():Promise<void> { await this.events; }
+  async drain():Promise<void> { await this.writes;await this.events; }
   dispose():void {this.transcript.dispose();}
 }

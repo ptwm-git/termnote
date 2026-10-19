@@ -1,9 +1,11 @@
 // Destructive only to newly created fixtures in the named non-production test-vault.
 // Requires a running Obsidian with its CLI and the current plugin installed.
 import {execFileSync} from 'node:child_process';
+import {resolve} from 'node:path';
+const expected=resolve('../test-vault');
 const run=(command,...args)=>execFileSync('obsidian',[command,'vault=test-vault',...args],{encoding:'utf8',timeout:60000,maxBuffer:2e6});
 function evaluate(fn){
-  const output=run('eval','code=('+fn.toString()+')()');
+  const output=run('eval','code=(()=>{if(app.vault.adapter.getBasePath()!=='+JSON.stringify(expected)+')throw Error("Refusing non-test vault");return ('+fn.toString()+')();})()');
   if(!output.includes('=>'))throw new Error(output);
   return JSON.parse(output.slice(output.indexOf('=>')+2).trim());
 }

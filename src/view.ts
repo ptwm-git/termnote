@@ -43,7 +43,7 @@ export class TerminalView extends ItemView {
   private status!:HTMLElement;private preview!:HTMLElement;private message!:HTMLElement;
   private panes=new Map<string,Pane>();private observer?:ResizeObserver;
   private toolbarKey='';private previewRevision='';private disposed=false;
-  private split!:HTMLElement;private divider!:HTMLElement;private terminalTitle!:HTMLElement;
+  private split!:HTMLElement;private divider!:HTMLElement;private terminalTitle!:HTMLElement;private recordTitle!:HTMLElement;
   private appearanceKey='';private dragId:number|null=null;
   private previewComponent?:Component;private previewGeneration=0;
   constructor(leaf:WorkspaceLeaf,readonly manager:Manager) {super(leaf);}
@@ -67,7 +67,7 @@ export class TerminalView extends ItemView {
     this.message=this.contentEl.createDiv({cls:'ant-message'});
     this.split=this.contentEl.createDiv({cls:'ant-split'});
     const record=this.split.createDiv({cls:'ant-record'});
-    record.createDiv({text:'备份记录 · 自动保存',cls:'ant-section-title'});
+    this.recordTitle=record.createDiv({text:'增量对话 · 自动保存',cls:'ant-section-title'});
     this.preview=record.createDiv({cls:'ant-preview markdown-rendered'});
     this.divider=this.split.createDiv({cls:'ant-divider',attr:{role:'separator',tabindex:'0','aria-label':'调整备份与终端的高度','aria-orientation':'horizontal','aria-valuemin':'20','aria-valuemax':'80',title:'拖动调整上下比例；上下方向键微调'}});
     const terminalArea=this.split.createDiv({cls:'ant-terminal-area'});
@@ -211,6 +211,7 @@ export class TerminalView extends ItemView {
     }
     for(const [id,pane] of this.panes) pane.element.toggleClass('ant-hidden',id!==this.activeId);
     const session=this.current();
+    this.recordTitle.setText(!session||session.record.transcriptVersion===2?'增量对话 · 自动保存':'历史记录 · 原文保留');
     if(session&&!this.panes.has(session.record.id))this.run(this.createPane(session));
     for(const [id,pane]of this.panes)pane.element.toggleClass('ant-hidden',id!==this.activeId);
     this.terminalTitle.setText(session?.record.native?'历史终端（主动恢复后继续）':'系统终端 · 直接输入本机 CLI 命令');
@@ -258,6 +259,7 @@ export class TerminalView extends ItemView {
       menu.addItem(item=>item.setTitle('在文件管理器中显示原始日志').setIcon('folder-open').onClick(()=>{
         const electron=require('electron') as {shell:{showItemInFolder(path:string):void}};electron.shell.showItemInFolder(session.journal);
       }));
+      if(session.record.transcriptVersion!==2)menu.addItem(item=>item.setTitle('生成精简记录副本').setIcon('file-plus').onClick(()=>this.run(this.manager.compactCopy(session).then(file=>this.app.workspace.getLeaf('tab').openFile(file)))));
       if(session.record.native){
         if(!session.live)menu.addItem(item=>item.setTitle('继续历史 OpenCode 会话').setIcon('play').onClick(()=>this.run(this.manager.launch(session))));
         menu.addItem(item=>item.setTitle('补齐历史原生记录').setIcon('download').onClick(()=>this.run(session.refreshNative())));

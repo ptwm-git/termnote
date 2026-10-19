@@ -1,8 +1,8 @@
 // macOS desktop acceptance. All Agent state and model traffic stay in an isolated test directory.
 import{createServer}from'node:http';import{mkdtemp,writeFile,chmod}from'node:fs/promises';
-import{tmpdir,homedir}from'node:os';import{join}from'node:path';import{execFile}from'node:child_process';import{promisify}from'node:util';import assert from'node:assert/strict';
+import{tmpdir,homedir}from'node:os';import{join,resolve}from'node:path';import{execFile}from'node:child_process';import{promisify}from'node:util';import assert from'node:assert/strict';
 const exec=promisify(execFile),dir=await mkdtemp(join(tmpdir(),'termnote-obsidian-')),profileID='qa-'+Date.now();
-async function ev(code){const{stdout}=await exec('obsidian',['eval','vault=test-vault','code='+code],{timeout:60000,maxBuffer:2e6});const result=stdout.slice(stdout.indexOf('=>')+2).trim();try{return JSON.parse(result);}catch{throw Error(result);}}
+async function ev(code){const{stdout}=await exec('obsidian',['eval','vault=test-vault','code=(()=>{if(app.vault.adapter.getBasePath()!=='+JSON.stringify(resolve('../test-vault'))+')throw Error("Refusing non-test vault");return '+code+';})()'],{timeout:60000,maxBuffer:2e6});const result=stdout.slice(stdout.indexOf('=>')+2).trim();try{return JSON.parse(result);}catch{throw Error(result);}}
 let calls=0;
 const mock=createServer(async(req,res)=>{
   let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw||'{}');calls++;

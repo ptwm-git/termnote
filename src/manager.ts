@@ -83,7 +83,7 @@ export class Manager {
       else id=oldId as `${string}-${string}-${string}-${string}-${string}`;
     }
     const profile=SYSTEM_PROFILE_ID;
-    const record:RecordData={id,path:file.path,...(sourcePath?{sourcePath}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
+    const record:RecordData={id,transcriptVersion:2,path:file.path,...(sourcePath?{sourcePath}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
     const session=this.make(record);this.data.records.push(record);
     if(oldId===id) await session.restore();else await session.initialize();
     await session.flush();await this.persist();this.changed();return session;
@@ -121,6 +121,11 @@ export class Manager {
       const shell=defaultShell(process.platform,process.env);profile.executable=shell.executable;if(!profile.args.length)profile.args=shell.args;
     }
     const cwd=session.record.launch&&(session.seq>0||session.record.native)?(session.record.cwd||session.native.snapshot?.cwd||profile.cwd):profile.cwd.trim()?resolve(profile.cwd):join(this.base,parentPath(session.record.path));
+    if(session.legacyFrozen&&(session.record.native||session.record.state==='failed'&&session.seq<=1)){
+      const original=session.record.path,folder=parentPath(original),name=original.split('/').pop()!.replace(/\.md$/,'')+'（继续）';let path=pathFor(folder,name+'.md'),n=1;
+      while(await this.app.vault.adapter.exists(path))path=pathFor(folder,name+' '+(++n)+'.md');
+      await this.app.vault.create(path,await this.notes.read(original));session.record.path=path;session.record.sourcePath=original;session.writer.path=path;session.legacyFrozen=false;await this.persist();
+    }
     await session.start(profile,cwd);await this.persist();this.changed();
   }
   async selectProfile(session:Session,profileId:string):Promise<Session> {
@@ -154,6 +159,12 @@ export class Manager {
     }
     this.changed();await this.persist();
   }
+  compactCopy(session:Session):Promise<TFile>{return this.serial(async()=>{
+    const source=this.app.vault.getFileByPath(session.record.path);if(!source)throw new Error('原笔记不存在');
+    const body=await session.compactContent(),folder=parentPath(source.path),name=source.basename.slice(0,180)+'（精简记录）';let path=pathFor(folder,name+'.md'),n=1;
+    while(await this.app.vault.adapter.exists(path))path=pathFor(folder,name+' '+(++n)+'.md');
+    return this.app.vault.create(path,'# '+name+'\n\n来源：'+this.app.fileManager.generateMarkdownLink(source,path)+'\n\n> 依据已落盘日志生成；原笔记与原始日志保留。旧版无提交事件时仅标为终端输出，不猜测输入角色。\n\n'+body);
+  });}
   async exportContent(session:Session):Promise<string> {
     await session.drain();await session.flush();
     if(session.historyError||session.saveError||session.record.journalError)throw new Error('请先恢复记录同步再导出：'+(session.historyError||session.saveError||session.record.journalError));

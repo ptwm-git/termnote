@@ -84,7 +84,7 @@ test('日志恢复处理未完成末尾，笔记投影可重建',async()=>{
   const journal=join(dir,'log.jsonl');await writeFile(journal,[{type:'start',seq:1,time:'now',cols:80,rows:20},{type:'output',seq:2,time:'now',data:'已落盘内容\r\n'}].map(e=>JSON.stringify(e)).join('\n')+'\n{"type":');
   const host={bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}};
   const session=new Session(record,journal,new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'R.md'),host);
-  try {await session.restore();await session.flush();assert.equal(record.state,'interrupted');assert.match(text,/已落盘内容/);const previous=text;await session.flush();assert.equal(text,previous);assert.match(session.error,/末尾/);}
+  try {await session.restore();await session.flush();assert.equal(record.state,'interrupted');assert.match(text,/已落盘内容/);const previous=text;await session.flush();assert.equal(text,previous);assert.match(session.error,/末尾/);await assert.rejects(session.compactContent(),/不完整/);}
   finally{session.dispose();await rm(dir,{recursive:true,force:true});}
 });
 
@@ -110,4 +110,56 @@ test('真实系统 Shell 可交互运行 CLI，中文结果退出后持续保留
     const end=Date.now()+10000;while(session.live&&Date.now()<end)await new Promise(r=>setTimeout(r,25));
     await session.stop();assert.equal(record.state,'ended');assert.equal(session.saveError,'');assert.ok(text.includes('CLI_'+token));
   }finally{await session.stop();session.dispose();await rm(folder,{recursive:true,force:true});}
+});
+
+
+test('真实PTY输入/输出独立持久化，隐藏密码不归档，重载一致',{timeout:30000},async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'termnote-dialogue-')),id=randomUUID(),python=process.platform==='win32'?'python':'python3';let text='# 增量记录\n';
+  const record:RecordData={id,transcriptVersion:2,path:'Flow.md',visible:true,profile:'shell',created:'now',state:'idle',cwd:'',executable:'',args:[]};
+  const access={read:async()=>text,update:async(_p:string,fn:(text:string)=>string)=>{text=fn(text);}},host={bridge:resolve('bridge.py'),python:async()=>({executable:python,prefix:[],description:'test'}),changed:()=>{}};
+  const s=new Session(record,join(folder,'events.jsonl'),new NoteWriter(access,id,'Flow.md'),host);
+  const wait=async(fn:()=>boolean)=>{const until=Date.now()+15000;while(!fn()&&Date.now()<until){await s.flush();await new Promise(r=>setTimeout(r,30));}assert.ok(fn(),text);};
+  try{
+    const runner=join(folder,'prompt.py');await writeFile(runner,'import getpass\nx=input("READY> ")\nprint("ANSWER:"+x,flush=True)\np=getpass.getpass("Password: ")\nprint("FINISHED",flush=True)\n','utf8');
+    await s.start({id:'shell',name:'CLI',executable:python,args:['-u',runner],cwd:folder},folder);await wait(()=>s.seq>=2&&s.record.state==='running');
+    s.write('中文提问\r');await wait(()=>text.includes('ANSWER:中文提问'));s.write('private-password-3971\r');await wait(()=>s.record.state==='ended');await s.stop();
+    assert.match(text,/### 我/);assert.match(text,/### 终端/);assert.equal(text.split('中文提问').length-1,2,text);assert.doesNotMatch(text,/private-password/);assert.doesNotMatch(text,/终端界面快照/);
+    const raw=await readFile(s.journal,'utf8');assert.doesNotMatch(raw,/private-password/);const events=raw.trim().split('\n').map(line=>JSON.parse(line));assert.ok(events.some(e=>e.type==='interaction'&&e.data==='中文提问'));assert.ok(events.findIndex(e=>e.type==='interaction'&&e.data==='中文提问')<events.findIndex(e=>e.type==='output'&&e.data?.includes('ANSWER:')));
+    const before=text,reloaded=new Session({...record},s.journal,new NoteWriter(access,id,'Flow.md',record.lastHash),host);try{await reloaded.restore();await reloaded.flush();assert.equal(text,before);}finally{reloaded.dispose();}
+  }finally{await s.stop();s.dispose();await rm(folder,{recursive:true,force:true});}
+});
+
+
+test('升级重载保留旧笔记中间快照原件，精简投影另行生成',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'termnote-legacy-')),id=randomUUID();let text='# 旧笔记\n';
+ const record:RecordData={id,path:'Old.md',visible:true,profile:'old',created:'now',state:'ended',cwd:dir,executable:'',args:[]},access={read:async()=>text,update:async(_p:string,fn:(s:string)=>string)=>{text=fn(text);}},host={bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}};
+ const events=[{type:'output',seq:1,time:'t',data:'\x1b[HOLD_FRAME_A'},{type:'output',seq:2,time:'t',data:'\x1b[HOLD_FRAME_B'},{type:'exit',seq:3,time:'t',code:0}];
+ const first=new Session(record,join(dir,'events.jsonl'),new NoteWriter(access,id,'Old.md'),host);
+ try{
+  await writeFile(first.journal,events.map(e=>JSON.stringify(e)).join('\n')+'\n');
+  for(const event of events){await (first as unknown as {ingest(e:unknown):Promise<void>}).ingest(event);await first.flush();}
+  const before=text;assert.match(before,/OLD_FRAME_A/);assert.match(before,/OLD_FRAME_B/);
+  const loaded=new Session({...record},first.journal,new NoteWriter(access,id,'Old.md',record.lastHash),host);
+  try{await loaded.restore();await loaded.flush();await loaded.stop();assert.equal(text,before);assert.equal(loaded.legacyFrozen,true);assert.match(await loaded.content(),/OLD_FRAME_A/);assert.doesNotMatch(await loaded.compactContent(),/终端界面快照/);assert.equal(text,before);}finally{loaded.dispose();}
+ }finally{first.dispose();await rm(dir,{recursive:true,force:true});}
+});
+
+test('真实zsh多行括号粘贴确认后保存完整输入',{skip:process.platform==='win32',timeout:20000},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'termnote-paste-')),id=randomUUID();let text='# 粘贴\n';
+ const record:RecordData={id,transcriptVersion:2,path:'Paste.md',visible:true,profile:'shell',created:'now',state:'idle',cwd:dir,executable:'',args:[]},access={read:async()=>text,update:async(_p:string,fn:(s:string)=>string)=>{text=fn(text);}},host={bridge:resolve('bridge.py'),python:async()=>({executable:'python3',prefix:[],description:'test'}),changed:()=>{}};
+ const s=new Session(record,join(dir,'log.jsonl'),new NoteWriter(access,id,'Paste.md'),host);
+ try{
+  await s.start({id:'shell',name:'zsh',executable:'/bin/zsh',args:['-f'],cwd:dir},dir);await new Promise(r=>setTimeout(r,150));
+  const command='printf "FIRST\\n"\nprintf "SECOND\\n"';s.write('\x1b[200~'+command+'\x1b[201~\r');
+  const until=Date.now()+10000;while(!text.includes('SECOND')&&Date.now()<until){await s.flush();await new Promise(r=>setTimeout(r,30));}await new Promise(r=>setTimeout(r,150));await s.stop();assert.match(text,/### 我/);assert.ok(text.includes(command),text);assert.ok(text.includes('FIRST')&&text.includes('SECOND'));
+ }finally{await s.stop();s.dispose();await rm(dir,{recursive:true,force:true});}
+});
+test('可解析但事件结构损坏的日志不能作为完整副本来源',async()=>{
+ for(const broken of [{type:'output'},{type:'corrupted',data:'LOST'},{type:'resize',cols:80},{type:'interaction',action:'unknown'}]){
+  const dir=await mkdtemp(join(tmpdir(),'termnote-invalid-event-')),id=randomUUID(),journal=join(dir,'log.jsonl');let text=patchNote('# 原件\n',id,'不能覆盖原件',null);const before=text;
+  await writeFile(journal,[{type:'output',seq:1,time:'t',data:'KEPT'},{...broken,seq:2,time:'t'}].map(e=>JSON.stringify(e)).join('\n')+'\n');
+  const record:RecordData={id,path:'A.md',visible:true,profile:'shell',created:'t',state:'ended',cwd:dir,executable:'shell',args:[]};
+  const s=new Session(record,journal,new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'A.md'),{bridge:'',python:async()=>({executable:'',prefix:[],description:''}),changed:()=>{}});
+  try{await assert.rejects(s.restore(),/格式损坏/);await assert.rejects(s.compactContent(),/格式损坏/);await s.flush();assert.equal(text,before);}finally{s.dispose();await rm(dir,{recursive:true,force:true});}
+ }
 });

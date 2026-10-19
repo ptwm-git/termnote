@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chineseNumber,fileName,validateName} from '../src/naming';
 import {markers,region,patchNote,fence,binding,detachCopiedBinding,hash} from '../src/note';
-import {Transcript} from '../src/transcript';
+import {LegacyTranscript as Transcript} from '../src/legacy-transcript';
 import {NoteWriter} from '../src/writer';
 const id='12345678-1234-1234-1234-123456789012';
 test('递增中文命名和跨平台文件名',()=>{
