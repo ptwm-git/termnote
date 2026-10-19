@@ -153,7 +153,7 @@ export class Transcript {
     if(event.action==='cancel'){this.cancelling=this.editing;this.cancelEcho=this.cursorLine();this.inputLines=1;this.seal();return;}
     if(event.action==='submit'){
       this.capture();this.echo=event.echo??'';this.submitted=event.data??'';this.editing=false;this.seal();
-      if(event.data&&event.inputKind!=='operation'&&clean(this.inputPrefix))for(const text of [this.inputPrefix+event.data,event.echo??''])if(text.trim())this.confirmedEchoes.add(compact(clean(text)));
+      if(event.data&&event.inputKind!=='operation'&&clean(this.inputPrefix))for(const text of [this.inputPrefix+event.data,event.echo?.startsWith(this.inputPrefix)?event.echo:''])if(text.trim())this.confirmedEchoes.add(compact(clean(text)));
       this.inputLines=1;this.awaitingAnswer=true;this.roundCleared=false;if(event.data&&event.inputKind!=='operation')for(const text of [event.data,...event.data.split('\n')])if(text.trim())this.confirmedInputs.add(compact(text));
       if(event.data&&event.inputKind!=='operation')this.turns.push([event.data,...event.data.split('\n')].filter(text=>text.trim()).map(compact));
       if(event.data)this.blocks.push({kind:event.inputKind==='operation'?'operation':'input',lines:[{text:event.data,sealed:true}]});

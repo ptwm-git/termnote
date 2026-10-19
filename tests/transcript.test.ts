@@ -103,3 +103,6 @@ test('ConPTY以光标重绘普通提示符时不重复归档输入',async()=>{
 test('ConPTY在下一次隐藏输入后重绘历史仍排除已确认回显',async()=>{
  const t=new Transcript(60,8);try{await t.feed('READY> ');await submit(t,'中文提问');await t.feed('\x1b[1;1HREADY> 中文提问\r\nANSWER:中文提问\r\nPassword: ');await t.interaction(event('edit'));await t.interaction(event('submit',undefined,'Password: '));await t.feed('\x1b[1;1HREADY> 中文提问\r\nANSWER:中文提问\r\nPassword: \r\nFINISHED\r\n');const text=await t.render();assert.equal(count(text,'中文提问'),2,text);assert.match(text,/FINISHED/);}finally{t.dispose();}
 });
+test('多行输入的裸末行不得进入永久提示符回显集合',async()=>{
+ const t=new Transcript(60,8);try{await t.feed('READY> ');await t.interaction({...event('edit'),inputLines:2});await t.feed('line one\r\nline two');const v=await t.visibleInput('line one\nline two');assert.equal(v.text,'line one\nline two');await t.interaction(event('submit',v.text,v.echo));await t.feed('\x1b[2J\x1b[Hline two\r\n');const text=await t.render();assert.equal(text.split('\n').filter(line=>line==='line two').length,2,text);assert.match(text,/### 终端/);}finally{t.dispose();}
+});
