@@ -9,18 +9,21 @@ import {PALETTES,paletteName,setPalette,type Area,type Palette} from './appearan
 export default class AgentNoteTerminal extends Plugin {
   data!:PluginData;manager!:Manager;
   private shutdown?:Promise<void>;private opening?:Promise<TerminalView>;
+  private ready:Promise<void>=Promise.resolve();private loading?:Promise<void>;private finishReady:()=>void=()=>{};private unloading=false;
   async onload():Promise<void> {
     const stored=await this.loadData() as Partial<PluginData>|null;
     this.data={settings:normalizeSettings(stored?.settings),records:Array.isArray(stored?.records)?stored.records:[],counters:stored?.counters??{}};
     if(!(this.app.vault.adapter instanceof FileSystemAdapter)){new Notice('TermNote · 终端笔记只支持本地桌面知识库');return;}
     this.manager=new Manager(this.app,this.data,this.manifest.dir!,()=>this.saveData(this.data));
-    await this.manager.load();await this.manager.persist();
+    let resolveReady!:()=>void,rejectReady!:(error:unknown)=>void;
+    this.ready=new Promise<void>((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});this.finishReady=resolveReady;void this.ready.catch(this.report);
+    this.manager.ready=this.ready;
     this.registerView(VIEW_TYPE,leaf=>new TerminalView(leaf,this.manager));
     this.addRibbonIcon('terminal','打开终端笔记',()=>{void this.openCurrent().catch(this.report);});
     this.addCommand({id:'open-current-note',name:'在当前文件右侧打开终端',callback:()=>{void this.openCurrent().catch(this.report);}});
     this.addCommand({id:'new-terminal-note',name:'新建终端备份',callback:()=>{void this.getView().then(view=>view.newTab()).catch(this.report);}});
     this.addCommand({id:'show-sessions',name:'打开右侧终端工作台',callback:()=>{void this.getView().catch(this.report);}});
-    this.addCommand({id:'stop-all',name:'结束所有终端会话并保存',callback:()=>{void Promise.all([...this.manager.sessions.values()].map(s=>s.stop())).then(()=>{
+    this.addCommand({id:'stop-all',name:'结束所有终端会话并保存',callback:()=>{void this.ready.then(()=>Promise.all([...this.manager.sessions.values()].map(s=>s.stop()))).then(()=>{
       const failed=[...this.manager.sessions.values()].filter(s=>s.saveError||s.record.journalError);
       new Notice(failed.length?`会话已结束，${failed.length} 篇笔记仍待同步；请在对应标签恢复记录`:'所有会话已结束，记录已保存',8000);
     }).catch(this.report);}});
@@ -28,17 +31,24 @@ export default class AgentNoteTerminal extends Plugin {
       if(file instanceof TFile)menu.addItem(item=>item.setTitle('在右侧终端打开并备份').setIcon('terminal').onClick(()=>{void this.openFile(file).catch(this.report);}));
       if(file instanceof TFolder)menu.addItem(item=>item.setTitle('在此文件夹新建终端备份').setIcon('terminal').onClick(()=>{void this.getView().then(view=>view.newTab(file.path)).catch(this.report);}));
     }));
-    this.registerEvent(this.app.vault.on('rename',(file,old)=>{void this.manager.renamed(file,old).catch(this.report);}));
-    this.registerEvent(this.app.vault.on('delete',file=>{void this.manager.deleted(file.path).catch(this.report);}));
+    this.registerEvent(this.app.vault.on('rename',(file,old)=>{if(this.manager.closed)return;void (this.manager.loaded?this.ready.then(()=>this.manager.renamed(file,old)):this.manager.renamed(file,old)).catch(this.report);}));
+    this.registerEvent(this.app.vault.on('delete',file=>{const path=file.path;void this.ready.then(()=>this.manager.closed?undefined:this.manager.deleted(path)).catch(this.report);}));
     this.registerEvent(this.app.workspace.on('quit',tasks=>{tasks.addPromise(this.closeSessions());}));
     this.app.workspace.onLayoutReady(()=>{
-      if(!this.manager.closed&&this.app.workspace.getLeavesOfType(VIEW_TYPE).some(leaf=>leaf.getRoot()!==this.app.workspace.rightSplit))void this.getView().catch(this.report);
+      if(this.manager.closed){resolveReady();return;}
+      this.loading=this.manager.load().then(()=>this.manager.persist());
+      void this.loading.then(()=>{
+        resolveReady();
+        if(!this.unloading&&this.app.workspace.getLeavesOfType(VIEW_TYPE).some(leaf=>leaf.getRoot()!==this.app.workspace.rightSplit))void this.getView().catch(this.report);
+      },rejectReady);
     });
     this.addSettingTab(new TerminalSettings(this));
+    // Initial onload must return so Obsidian can finish restoring its workspace.
+    if(this.app.workspace.layoutReady)await this.ready;
   }
   private report=(error:unknown):void=>{console.error('[TermNote]',error);new Notice(error instanceof Error?error.message:String(error),10000);};
   getView():Promise<TerminalView> {
-    return this.opening??=(this.openSidebar().finally(()=>{this.opening=undefined;}));
+    return this.ready.then(()=>this.opening??=(this.openSidebar().finally(()=>{this.opening=undefined;})));
   }
   private async openSidebar():Promise<TerminalView> {
     if(this.manager.closed)throw new Error('插件正在关闭');
@@ -57,6 +67,7 @@ export default class AgentNoteTerminal extends Plugin {
     workspace.requestSaveLayout();return leaf.view;
   }
   async openFile(file:TFile):Promise<void> {
+    await this.ready;
     const session=await this.manager.openFromFile(file),view=await this.getView();view.select(session);
     if(session.record.state==='idle'&&session.record.profile===SYSTEM_PROFILE_ID&&!session.record.native)await this.manager.launch(session);
   }
@@ -65,7 +76,11 @@ export default class AgentNoteTerminal extends Plugin {
     if(file)await this.openFile(file);
     else{const view=await this.getView();new FolderPicker(this.app,folder=>view.newTab(folder.path)).open();}
   }
-  private closeSessions():Promise<void>{return this.shutdown??=this.manager.shutdown();}
+  private closeSessions():Promise<void>{return this.shutdown??=(async()=>{
+    this.unloading=true;this.manager.closed=true;
+    if(!this.loading)this.finishReady();else await this.loading.catch(()=>{});
+    await this.manager.shutdown();
+  })();}
   onunload():void{if(this.manager)void this.closeSessions().catch(this.report);}
 }
 

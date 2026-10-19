@@ -107,3 +107,9 @@ InputTracker 只在内存管理编辑状态；提交前等待已回显的终端�
 依据：[xterm按键和paste](https://xtermjs.org/docs/api/terminal/classes/terminal/)、[Obsidian trashFile](https://docs.obsidian.md/Reference/TypeScript+API/FileManager/trashFile)。
 
 0.3.2 历史归档保全补充：继续旧增强会话的副本可能与原件共享同一 UUID 日志。不保存仍可移除继续副本，但共享日志与原生归档必须保留，并明确提示；不将历史原件的恢复依据当成本次临时文件删除。共享属性持久化，旧记录按来源绑定迁移，无法核验时优先保留。
+
+## 0.3.3 字形与恢复时序
+
+xterm DOM按W的英文fontBoundingBox测量格高，默认lineHeight=1并逐行overflow:hidden，macOS中文回退字体超出格高时笔画被切。使用xterm lineHeight=1.3（12px实测14→18px行框），让渲染、光标、fit及PTY尺寸同源；主题改变更新fontFamily参与外观key。不放宽行overflow，不使用top偏移。
+
+onload先建立Manager、注册视图与事件，然后onLayoutReady启动唯一加载Promise；首次布局时不await该Promise，已经就绪的手动启用则等待完成。公开入口与删除事件等待ready；恢复前的rename即时更新索引路径和已有writer路径，加载中移动的ID在首轮结束后按新路径和UUID重新建立投影，并恢复原可见性；初始视图保留activeId，显示正在恢复而不清空选择。shutdown若加载未开始先将Manager关闭并释放ready，若正在加载先等待收尾。绑定核验后将旧missing改idle再从完整日志恢复；异UUID不变。

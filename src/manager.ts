@@ -24,7 +24,8 @@ export class Manager {
   private interval?:ReturnType<typeof setInterval>;
   private pythonPromise?:Promise<PythonCommand>;
   private closingRecords=new Set<string>();
-  closed=false;
+  private movedDuringLoad=new Set<string>();private loadVisibility=new Map<string,boolean>();
+  closed=false;loaded=false;ready:Promise<void>=Promise.resolve();
   constructor(readonly app:App,readonly data:PluginData,pluginDir:string,private saveData:()=>Promise<void>) {
     if(!(app.vault.adapter instanceof FileSystemAdapter)) throw new Error('终端需要本地文件夹知识库');
     this.base=app.vault.adapter.getBasePath();this.bridge='';this.notes=new ObsidianNotes(app);
@@ -52,40 +53,61 @@ export class Manager {
     const session=new Session(record,join(this.base,'.agent-note-terminal',record.id+'.jsonl'),writer,{bridge:this.bridge,python:this.python,changed:this.changed,persist:()=>this.persist()});
     this.sessions.set(record.id,session);return session;
   }
-  async load():Promise<void> {
-    await mkdir(join(this.base,'.agent-note-terminal'),{recursive:true,mode:0o700});
-    const ids=new Set<string>();
-    const removed=new Set<string>();
-    for(const record of this.data.records) {
-      if(!/^[0-9a-f-]{36}$/.test(record.id) || ids.has(record.id)) continue;
-      ids.add(record.id);
-      if(record.sourcePath&&record.sourcePath!==record.path&&await this.app.vault.adapter.exists(record.sourcePath)){
-        try{if(binding(await this.notes.read(record.sourcePath))===record.id)record.sharedArchive=true;}
+  private async restoreRecord(record:RecordData,removed:Set<string>):Promise<void>{
+      const path=record.path,source=record.sourcePath,stale=()=>record.path!==path||record.sourcePath!==source;
+      if(source&&source!==path){
+        try{if(await this.app.vault.adapter.exists(source)){if(stale())return;if(binding(await this.notes.read(source))===record.id)record.sharedArchive=true;}}
         catch{record.sharedArchive=true;}
       }
+      if(stale())return;
       if(record.discarded){
-        const file=this.app.vault.getFileByPath(record.path);
+        const file=this.app.vault.getFileByPath(path);
         let same=false;
-        try{if(!file&&await this.app.vault.adapter.exists(record.path))throw new Error('文件尚未载入，无法核验');same=!!file&&binding(await this.notes.read(record.path))===record.id;}
-        catch(error){const session=this.make(record);record.state='failed';record.visible=true;session.historyError=session.saveError='上次丢弃状态无法核验，已保留全部文件：'+(error as Error).message;continue;}
+        try{const exists=file||await this.app.vault.adapter.exists(path);if(stale())return;if(!file&&exists)throw new Error('文件尚未载入，无法核验');same=!!file&&binding(await this.notes.read(path))===record.id;}
+        catch(error){if(stale())return;const session=this.make(record);record.state='failed';record.visible=true;session.historyError=session.saveError='上次丢弃状态无法核验，已保留全部文件：'+(error as Error).message;return;}
+        if(stale())return;
         if(!same){
-          const pending=await this.cleanupRecord(record);if(!pending.length)removed.add(record.id);else new Notice('上次丢弃的日志仍待清理：'+pending.join('、'));continue;
+          const pending=await this.cleanupRecord(record);if(!pending.length)removed.add(record.id);else new Notice('上次丢弃的日志仍待清理：'+pending.join('、'));return;
         }
         record.discarded=undefined;record.visible=true;new Notice('上次删除未完成，已保留备份：'+record.path);
       }
       const session=this.make(record);
-      if(!(this.app.vault.getAbstractFileByPath(record.path) instanceof TFile)) {record.state='missing';record.visible=false;continue;}
+      if(!(this.app.vault.getAbstractFileByPath(record.path) instanceof TFile)) {record.state='missing';record.visible=false;return;}
+      let restored=false;
       try {
         if(binding(await this.notes.read(record.path))!==record.id) {
-          record.state='missing';record.visible=false;session.error='原绑定文件已不存在或标识变化；旧日志保留，不写入同路径新文件';continue;
+          if(stale()){session.historyError='路径变更中，等待重新核验';return;}
+          record.state='missing';record.visible=false;session.error='原绑定文件已不存在或标识变化；旧日志保留，不写入同路径新文件';return;
         }
-        await session.restore();await session.writer.init();await session.flush();
+        if(stale()){session.historyError='路径变更中，等待重新核验';return;}
+        if(record.state==='missing')record.state='idle';
+        await session.restore();if(stale()){session.historyError='路径变更中，等待重新核验';return;}restored=true;await session.writer.init();await session.flush();
       }
-      catch(error) {record.state='failed';session.saveError=(error as Error).message;}
+      catch(error) {record.state='failed';session.saveError=(error as Error).message;if(!restored)session.historyError=session.saveError;}
+  }
+  async load():Promise<void> {
+    await mkdir(join(this.base,'.agent-note-terminal'),{recursive:true,mode:0o700});
+    const ids=new Set<string>(),removed=new Set<string>();this.movedDuringLoad.clear();
+    this.loadVisibility=new Map(this.data.records.map(record=>[record.id,record.visible||!!record.discarded]));
+    for(const record of this.data.records) {
+      if(!/^[0-9a-f-]{36}$/.test(record.id)||ids.has(record.id))continue;
+      ids.add(record.id);await this.restoreRecord(record,removed);
+    }
+    // Rename events can arrive while an asynchronous journal is being restored.
+    // Rebuild only those projections after their verified path has settled.
+    while(this.movedDuringLoad.size){
+      const moved=[...this.movedDuringLoad];this.movedDuringLoad.clear();
+      for(const id of moved){
+        if(!ids.has(id)||removed.has(id))continue;
+        const record=this.data.records.find(item=>item.id===id)!;
+        this.sessions.get(id)?.dispose();this.sessions.delete(id);
+        record.visible=this.loadVisibility.get(id)??record.visible;
+        await this.restoreRecord(record,removed);
+      }
     }
     this.data.records=this.data.records.filter(record=>!removed.has(record.id));
     this.interval=setInterval(()=>{for(const session of this.sessions.values()) if(!session.saveError)void session.flush();},500);
-    this.changed();
+    this.loaded=true;this.changed();
   }
   async attach(file:TFile):Promise<Session> {return this.serial(()=>this.attachInternal(file));}
   private async attachInternal(file:TFile,sourcePath?:string,generated=false):Promise<Session> {
@@ -168,10 +190,19 @@ export class Manager {
     });
   }
   async renamed(file:TAbstractFile,oldPath:string):Promise<void> {
+    if(this.closed)return;
     const moved=(path:string):string=>path===oldPath?file.path:file instanceof TFolder&&path.startsWith(oldPath+'/')?file.path+path.slice(oldPath.length):path;
     if(file instanceof TFolder)for(const [folder,count]of Object.entries(this.data.counters)) {
       const next=moved(folder);
       if(next!==folder){this.data.counters[next]=Math.max(this.data.counters[next]??0,count);delete this.data.counters[folder];}
+    }
+    if(!this.loaded){
+      for(const record of this.data.records){
+        if(record.sourcePath){const nextSource=moved(record.sourcePath);if(nextSource!==record.sourcePath){record.sourcePath=nextSource;this.movedDuringLoad.add(record.id);}}
+        const next=moved(record.path);
+        if(next!==record.path){record.path=next;const session=this.sessions.get(record.id);if(session)session.writer.path=next;this.movedDuringLoad.add(record.id);}
+      }
+      this.changed();await this.persist();return;
     }
     for(const session of this.sessions.values()) {
       if(session.record.sourcePath)session.record.sourcePath=moved(session.record.sourcePath);

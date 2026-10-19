@@ -83,7 +83,7 @@ export class TerminalView extends ItemView {
     const tabRow=this.contentEl.createDiv({cls:'ant-tab-row'});
     this.tabs=tabRow.createDiv({cls:'ant-tabs',attr:{role:'tablist','aria-label':'终端会话标签'}});
     this.button(tabRow,'plus','新建终端页面（同目录独立文件）',()=>this.newTab());
-    this.button(tabRow,'history','打开已有终端页面',()=>new SessionPicker(this.manager,s=>this.select(s)).open());
+    this.button(tabRow,'history','打开已有终端页面',()=>this.run(this.manager.ready.then(()=>{if(!this.manager.closed&&!this.disposed)new SessionPicker(this.manager,s=>this.select(s)).open();})));
     this.toolbar=this.contentEl.createDiv({cls:'ant-toolbar'});
     this.status=this.contentEl.createDiv({cls:'ant-status',attr:{role:'status','aria-live':'polite'}});
     this.message=this.contentEl.createDiv({cls:'ant-message'});
@@ -136,10 +136,12 @@ export class TerminalView extends ItemView {
     const settings=this.manager.data.settings;applyAppearance(this.contentEl,settings);
     this.divider.setAttribute('aria-valuenow',String(Math.round(settings.recordRatio*100)));
     const style=getComputedStyle(this.stages),background=style.backgroundColor,foreground=style.color;
-    const key=[settings.fontSize,background,foreground].join('|');
+    const font=getComputedStyle(this.contentEl).getPropertyValue('--font-monospace').trim()||'monospace';
+    const key=[settings.fontSize,font,background,foreground].join('|');
     if(this.appearanceKey===key)return;this.appearanceKey=key;
     for(const pane of this.panes.values()){
       pane.terminal.options.fontSize=settings.fontSize;
+      pane.terminal.options.fontFamily=font;
       pane.terminal.options.theme={background,foreground,cursor:foreground};
     }
     this.fitActive();
@@ -159,7 +161,7 @@ export class TerminalView extends ItemView {
     if(this.panes.has(session.record.id))return;
     const element=this.stages.createDiv({cls:'ant-terminal'});
     const style=getComputedStyle(this.stages);
-    const terminal=new Terminal({fontSize:this.manager.data.settings.fontSize,fontFamily:getComputedStyle(this.contentEl).getPropertyValue('--font-monospace').trim()||'monospace',cursorBlink:true,scrollback:10000,allowProposedApi:true,theme:{background:style.backgroundColor,foreground:style.color,cursor:style.color}});
+    const terminal=new Terminal({fontSize:this.manager.data.settings.fontSize,lineHeight:1.3,fontFamily:getComputedStyle(this.contentEl).getPropertyValue('--font-monospace').trim()||'monospace',cursorBlink:true,scrollback:10000,allowProposedApi:true,theme:{background:style.backgroundColor,foreground:style.color,cursor:style.color}});
     const fit=new FitAddon();terminal.loadAddon(fit);terminal.open(element);
     const pane:Pane={element,terminal,fit,loading:true,pending:[],seq:0,cancelled:false};this.panes.set(session.record.id,pane);
     terminal.onData(data=>{if(!pane.loading&&!pane.cancelled&&!this.manager.isClosing(session))session.write(data);});
@@ -216,6 +218,9 @@ export class TerminalView extends ItemView {
     if(file instanceof TFile)this.run(this.app.workspace.getLeaf('tab').openFile(file));
   }
   newTab(folder?:string):void {
+    this.run(this.manager.ready.then(()=>{if(this.disposed)return;if(this.manager.closed)throw new Error('插件正在关闭');this.newTabReady(folder);}));
+  }
+  private newTabReady(folder?:string):void {
     const file=currentFile(this.app),current=this.current();
     const create=async(target:string)=>{
       const session=await this.manager.newNote(target,file?.path);this.select(session);await this.manager.launch(session);
@@ -226,6 +231,7 @@ export class TerminalView extends ItemView {
   private render():void {
     if(!this.tabs||this.disposed)return;
     this.updateAppearance();
+    if(!this.manager.loaded){this.status.setText('正在恢复终端笔记…');return;}
     const visible=this.manager.data.records.filter(r=>r.visible && this.manager.sessions.has(r.id));
     if(!visible.some(r=>r.id===this.activeId)) this.activeId=visible[0]?.id??'';
     this.tabs.empty();

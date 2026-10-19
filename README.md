@@ -7,6 +7,7 @@ TermNote is a desktop Obsidian plugin with a terminal in the right sidebar: a co
 - Start a system shell and type any installed CLI, including OpenCode, Claude Code or Codex. No agent is selected or required by default.
 - Use independent terminal tabs. Backups are created beside the current document with numbered names that fill the smallest available gap; you can rename them.
 - Resize the native sidebar horizontally and drag the internal divider to adjust the record/terminal heights.
+- Render Chinese fallback fonts with a 1.3 terminal line height; theme font changes are remeasured.
 - Configure each area's font size, background and text color independently. Presets include black, gray, light and the Obsidian theme.
 - Save an incremental conversation: submitted visible input as **我** (me), output as **终端** (terminal), and menu confirmations as **操作** (action). Streaming text updates its current block; screen repainting does not append whole-screen snapshots.
 - Keep the raw output event log for recovery. Export readable Markdown using the native **Save As** dialog. Older notes remain intact; **生成精简记录副本** creates a separate compact copy beside the original.
@@ -60,6 +61,7 @@ codex
 
 - 拖动右侧栏左边界：向左扩大终端工作台，向右给中央文档更多空间。使用 Obsidian 原生侧栏宽度控制。
 - 拖动记录与终端之间的分隔条：调整上下比例；聚焦分隔条后也可使用上下方向键，Home / End 调到边界。
+- 终端默认行高 1.3，避免 macOS 中文回退字体笔画被裁切；主题等宽字体变化会重新测量并适配。
 - 默认上下字号均为 12px。终端默认黑底浅字，备份默认跟随 Obsidian 主题。
 - 设置中「终端外观」「备份外观」分别提供字号、黑色 / 灰色 / 浅色 / 跟随主题预设，以及背景和字体自定义颜色。上下可使用不同配色，修改会即时生效并保存。
 - CLI 自行输出的 ANSI 彩色文字仍由 CLI 控制；字体颜色设置控制默认文字。

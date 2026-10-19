@@ -1,7 +1,7 @@
 {
   "id": "agent-note-terminal",
   "name": "TermNote",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "minAppVersion": "1.14.4",
   "description": "Run local agents in tabbed terminals and continuously save each session to a Markdown note.",
   "author": "wmpt",

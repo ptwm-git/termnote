@@ -160,3 +160,61 @@ test('旧继续副本迁移识别共享归档，丢弃及重载清理均保留�
     const pending=structuredClone(f.data);pending.records[0].sharedArchive=true;pending.records[0].discarded=true;const retry=new Manager(f.app,pending,'',async()=>{});await retry.load();await access(s.journal);assert.equal(retry.data.records.length,0);await retry.shutdown();await recovered.shutdown();
   }finally{await f.end();}
 });
+test('旧missing同绑定空历史恢复待启动，异绑定的新文件仍受保护',async()=>{
+  const f=await fixture();try{
+    const same=await f.manager.newNote(''),other=await f.manager.newNote(''),text=f.texts.get(same.record.path);
+    same.record.state='missing';other.record.state='missing';f.texts.set(other.record.path,'# 新文件');
+    const recovered=new Manager(f.app,structuredClone(f.data),'',async()=>{});await recovered.load();
+    assert.equal(recovered.loaded,true);assert.equal(recovered.sessions.get(same.record.id).record.state,'idle');assert.equal(f.texts.get(same.record.path),text);
+    assert.equal(recovered.sessions.get(other.record.id).record.state,'missing');assert.equal(f.texts.get(other.record.path),'# 新文件');await recovered.shutdown();
+  }finally{await f.end();}
+});
+test('布局就绪前重命名先更新索引，恢复时核验UUID并保留标签',async()=>{
+  const f=await fixture();try{
+    const s=await f.manager.newNote(''),old=s.record.path,file=f.files.get(old),text=f.texts.get(old)!,pending=new Manager(f.app,structuredClone(f.data),'',async()=>{});
+    f.files.delete(old);f.texts.delete(old);file.path='重命名.md';f.files.set(file.path,file);f.texts.set(file.path,text);
+    await pending.renamed(file,old);await pending.load();const restored=pending.sessions.get(s.record.id);
+    assert.equal(restored.record.path,'重命名.md');assert.equal(restored.record.state,'idle');assert.equal(restored.record.visible,true);assert.equal(f.texts.get(file.path),text);await pending.shutdown();
+  }finally{await f.end();}
+});
+test('恢复中已暂时缺失的文件收到重命名事件，按新路径重建投影并保留可见性',async()=>{
+  const f=await fixture();try{
+    const first=await f.manager.newNote(''),second=await f.manager.newNote(''),old=first.record.path,file=f.files.get(old),text=f.texts.get(old)!,pending=new Manager(f.app,structuredClone(f.data),'',async()=>{});
+    const get=f.app.vault.getAbstractFileByPath,read=f.app.vault.read;let entered!:()=>void,release!:()=>void,blocked=false;
+    const ready=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+    f.app.vault.getAbstractFileByPath=(path:string)=>path===old?undefined:get(path);
+    f.app.vault.read=async(file:any)=>{if(file.path===second.record.path&&!blocked){blocked=true;entered();await gate;}return read(file);};
+    const loading=pending.load();await ready;assert.equal(pending.sessions.get(first.record.id).record.state,'missing');
+    f.files.delete(old);f.texts.delete(old);file.path='加载时移动.md';f.files.set(file.path,file);f.texts.set(file.path,text);await pending.renamed(file,old);release();await loading;
+    const restored=pending.sessions.get(first.record.id);assert.equal(restored.record.path,'加载时移动.md');assert.equal(restored.record.state,'idle');assert.equal(restored.record.visible,true);assert.equal(restored.historyError,'');assert.equal(f.texts.get(file.path),text);await pending.shutdown();
+  }finally{await f.end();}
+});
+test('普通加载的绑定读取失败，退出不能用未恢复的空历史覆盖记录',async()=>{
+  const f=await fixture();try{
+    const s=await f.manager.newNote('');await writeFile(s.journal,[{type:'start',seq:1,time:'t',cols:80,rows:24},{type:'output',seq:2,time:'t',data:'已归档的回答\r\n'},{type:'exit',seq:3,time:'t',code:0}].map(e=>JSON.stringify(e)).join('\n')+'\n');
+    await s.restore();await s.flush();const text=f.texts.get(s.record.path),read=f.app.vault.read,pending=new Manager(f.app,structuredClone(f.data),'',async()=>{});
+    f.app.vault.read=async()=>{throw Error('read unavailable');};await pending.load();f.app.vault.read=read;
+    assert.match(pending.sessions.get(s.record.id).historyError,/read unavailable/);await pending.shutdown();assert.equal(f.texts.get(s.record.path),text);
+    const retry=new Manager(f.app,structuredClone(pending.data),'',async()=>{});await retry.load();assert.match(await retry.sessions.get(s.record.id).content(),/已归档的回答/);assert.equal(f.texts.get(s.record.path),text);await retry.shutdown();
+  }finally{await f.end();}
+});
+test('丢弃恢复核验旧路径期间发生移动，不能沿用旧路径缺失结论删除日志',async()=>{
+  const f=await fixture();try{
+    const s=await f.manager.newNote(''),old=s.record.path,file=f.files.get(old),text=f.texts.get(old)!,data=structuredClone(f.data);data.records[0].discarded=true;
+    const pending=new Manager(f.app,data,'',async()=>{}),exists=f.app.vault.adapter.exists,get=f.app.vault.getFileByPath;let entered!:()=>void,release!:()=>void;
+    const ready=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+    f.app.vault.getFileByPath=(path:string)=>path===old?null:get(path);f.app.vault.adapter.exists=async(path:string)=>{if(path===old){entered();await gate;return false;}return exists(path);};
+    const loading=pending.load();await ready;f.files.delete(old);f.texts.delete(old);file.path='恢复时移动.md';f.files.set(file.path,file);f.texts.set(file.path,text);await pending.renamed(file,old);release();await loading;
+    await access(s.journal);assert.equal(pending.data.records.length,1);assert.equal(pending.data.records[0].discarded,undefined);assert.equal(pending.data.records[0].path,file.path);assert.equal(f.texts.get(file.path),text);await pending.shutdown();
+  }finally{await f.end();}
+});
+test('共享来源的存在检查期间移动，重新核验新来源后保留历史归档',async()=>{
+  const f=await fixture();try{
+    const s=await f.manager.newNote(''),old=s.record.path,file=f.files.get(old),text=f.texts.get(old)!,data=structuredClone(f.data);data.records[0].sourcePath=old;data.records[0].path='已丢弃的继续副本.md';data.records[0].discarded=true;
+    const pending=new Manager(f.app,data,'',async()=>{}),exists=f.app.vault.adapter.exists;let entered!:()=>void,release!:()=>void;
+    const ready=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+    f.app.vault.adapter.exists=async(path:string)=>{if(path===old){entered();await gate;return false;}return exists(path);};
+    const loading=pending.load();await ready;f.files.delete(old);f.texts.delete(old);file.path='移动后的历史原件.md';f.files.set(file.path,file);f.texts.set(file.path,text);await pending.renamed(file,old);release();await loading;
+    assert.equal(pending.data.records.length,0);await access(s.journal);assert.equal(f.texts.get(file.path),text);await pending.shutdown();
+  }finally{await f.end();}
+});
