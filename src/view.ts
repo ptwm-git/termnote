@@ -58,6 +58,28 @@ class CloseModal extends Modal {
   }
   onClose():void {this.dismissed();}
 }
+class SyncRecoveryModal extends Modal {
+  constructor(private manager:Manager,private session:Session,private dismissed:()=>void){super(manager.app);}
+  onOpen():void{
+    this.titleEl.setText('备份并恢复笔记同步');
+    this.contentEl.createEl('p',{text:'笔记会话区域与上次保存不同。恢复前会在同目录保留当前文件的完整备份，再重新写入本会话记录；区域外的正文保留。'});
+    this.contentEl.createEl('p',{text:'关闭同步只控制Markdown笔记；原始终端日志仍会保留。关闭期间的内容不会在重新开启时补录。'});
+    const error=this.contentEl.createDiv({cls:'ant-error'}),buttons:HTMLButtonElement[]=[];let busy=false;
+    const run=async(recover:boolean)=>{
+      if(busy)return;busy=true;buttons.forEach(b=>b.disabled=true);
+      try{
+        if(recover){const backup=await this.manager.repair(this.session);await this.manager.setRecording(this.session,true);new Notice('同步已恢复；原文备份：'+backup,10000);}
+        else await this.manager.setRecording(this.session,false);
+        this.close();
+      }catch(e){const message=(e as Error).message;error.setText(message);if(!this.contentEl.isConnected)new Notice(message,10000);busy=false;buttons.forEach(b=>b.disabled=false);}
+    };
+    new Setting(this.contentEl)
+      .addButton(b=>{buttons.push(b.buttonEl);b.setButtonText('取消').onClick(()=>this.close());})
+      .addButton(b=>{buttons.push(b.buttonEl);b.setButtonText('仅关闭同步').onClick(()=>run(false));})
+      .addButton(b=>{buttons.push(b.buttonEl);b.setButtonText('备份并开启同步').setCta().onClick(()=>run(true));});
+  }
+  onClose():void{this.dismissed();}
+}
 export class TerminalView extends ItemView {
   private activeId='';
   private tabs!:HTMLElement;private toolbar!:HTMLElement;private stages!:HTMLElement;
@@ -68,6 +90,7 @@ export class TerminalView extends ItemView {
   private appearanceKey='';private dragId:number|null=null;
   private previewComponent?:Component;private previewGeneration=0;
   private closeModals=new Map<string,CloseModal>();
+  private syncModals=new Map<string,SyncRecoveryModal>();
   constructor(leaf:WorkspaceLeaf,readonly manager:Manager) {super(leaf);}
   getViewType():string {return VIEW_TYPE;}
   getDisplayText():string {return '终端笔记';}
@@ -250,25 +273,25 @@ export class TerminalView extends ItemView {
     }
     for(const [id,pane] of this.panes) pane.element.toggleClass('ant-hidden',id!==this.activeId);
     const session=this.current();
-    this.recordTitle.setText(!session||session.record.transcriptVersion===2?'增量对话 · 自动保存':'历史记录 · 原文保留');
+    this.recordTitle.setText(!session||session.record.transcriptVersion===2?session?.syncing?'增量对话 · 同步 ON':'已保存记录 · 同步 OFF':'历史记录 · 原文保留');
     if(session&&!this.manager.isClosing(session)&&!this.panes.has(session.record.id))this.run(this.createPane(session));
     for(const id of this.panes.keys())if(!this.manager.sessions.has(id))this.run(this.disposePane(id));
     for(const [id,pane]of this.panes)pane.element.toggleClass('ant-hidden',id!==this.activeId);
     this.terminalTitle.setText(session?.record.native?'历史终端（主动恢复后继续）':'系统终端 · 直接输入本机 CLI 命令');
-    const key=[this.activeId,session?.record.state,session?.record.path,session?.saveError,session?.record.native?.sessionID].join('|');
+    const key=[this.activeId,session?.record.state,session?.record.path,session?.saveError,session?.historyError,session?.syncEnabled,session?.syncPending,session?.record.native?.sessionID].join('|');
     if(this.toolbarKey!==key) {this.toolbarKey=key;this.renderToolbar(session);}
     if(!session) {
       this.previewRevision='';this.previewGeneration++;this.previewComponent?.unload();this.previewComponent=undefined;
       this.status.setText('每个标签是独立系统终端与备份文件。点击 ＋ 在当前文件夹新建。');this.message.setText('');this.preview.setText('终端可见内容将自动保存在同目录的新笔记中，当前文档保持原样。');return;
     }
-    this.status.setText(`${STATE_LABEL[session.record.state]} · ${session.record.journalError?'原始日志故障，程序已停止：'+session.record.journalError:session.saveError?'笔记待同步：'+session.saveError:session.savedAt?'备份已保存 '+session.savedAt:'等待保存'} · ${session.record.cwd||'工作目录：笔记所在文件夹'}`);
+    this.status.setText(`${STATE_LABEL[session.record.state]} · ${session.record.journalError?'原始日志故障，程序已停止：'+session.record.journalError:session.saveError?'同步 OFF · 待恢复：'+session.saveError:!session.syncEnabled?'同步 OFF · 终端继续运行，关闭期间不写笔记；原始日志仍保留':session.savedAt?'同步 ON · 备份已保存 '+session.savedAt:'同步 ON · 等待保存'} · ${session.record.cwd||'工作目录：笔记所在文件夹'}`);
     this.status.toggleClass('ant-error',!!session.saveError||!!session.record.journalError);
     this.message.setText([session.error,session.nativeError&&'原生记录待同步：'+session.nativeError,session.record.native&&'当前笔记固定绑定此 OpenCode 会话。新对话请使用插件「＋」；原生 /new 或历史切换不会更改归档对象。'].filter(Boolean).join('\n'));this.message.toggleClass('ant-error',!!session.error||!!session.nativeError);
     const revision=this.activeId+':'+session.savedRevision+':'+session.record.state;
     if(revision!==this.previewRevision) {
       this.previewRevision=revision;const generation=++this.previewGeneration;
       void (async()=>{
-        const body=await session.content(),target=createDiv(),component=new Component();component.load();
+        const body=await session.savedContent(),target=createDiv(),component=new Component();component.load();
         try {
           await MarkdownRenderer.render(this.app,body,target,session.record.path,component);
           if(this.current()===session&&!this.disposed && generation===this.previewGeneration) {
@@ -288,6 +311,10 @@ export class TerminalView extends ItemView {
       this.toolbar.createEl('button',{text:'新建备份'}).addEventListener('click',()=>this.newTab());return;
     }
     this.toolbar.createSpan({text:session.record.path.split('/').pop()!,cls:'ant-file',attr:{title:session.record.path}});
+    const sync=this.toolbar.createEl('button',{text:session.syncPending?'同步…':'同步 '+(session.syncing?'ON':'OFF'),cls:'ant-sync-button'+(session.syncing?' is-on':''),attr:{'aria-label':'笔记同步开关','aria-pressed':String(session.syncing)}});
+    sync.disabled=session.syncPending||this.manager.isClosing(session)||session.record.transcriptVersion!==2||!!session.record.native||!!session.historyError;
+    sync.title=session.record.transcriptVersion!==2||session.record.native?'历史增强会话请新建系统终端使用同步开关':session.historyError||session.saveError||'只控制当前笔记；原始终端日志仍保留。OFF期间不补录';
+    sync.addEventListener('click',()=>{if(session.saveError)this.recoverSync(session);else this.run(this.manager.setRecording(session,!session.syncEnabled));});
     if((session.record.state==='idle'||session.record.state==='failed')&&session.record.profile===SYSTEM_PROFILE_ID&&!session.record.native)this.button(this.toolbar,'play','启动系统终端',()=>this.run(this.manager.launch(session)));
     if(session.live)this.button(this.toolbar,'square','结束终端并保存备份',()=>this.run(session.stop()));
     this.button(this.toolbar,'file-text','在中央打开备份笔记',()=>this.openNote(session));
@@ -304,11 +331,15 @@ export class TerminalView extends ItemView {
         if(!session.live)menu.addItem(item=>item.setTitle('继续历史 OpenCode 会话').setIcon('play').onClick(()=>this.run(this.manager.launch(session))));
         menu.addItem(item=>item.setTitle('补齐历史原生记录').setIcon('download').onClick(()=>this.run(this.manager.refreshNative(session))));
       }
-      if(session.saveError)menu.addItem(item=>item.setTitle('备份当前文件并恢复同步').setIcon('refresh-cw').onClick(()=>this.run(this.manager.repair(session))));
+      if(session.saveError)menu.addItem(item=>item.setTitle('备份当前文件并恢复同步').setIcon('refresh-cw').onClick(()=>this.recoverSync(session)));
       menu.showAtPosition({x:more.getBoundingClientRect().left,y:more.getBoundingClientRect().bottom});
     });
   }
+  private recoverSync(session:Session):void{
+    if(this.syncModals.has(session.record.id))return;
+    const modal=new SyncRecoveryModal(this.manager,session,()=>this.syncModals.delete(session.record.id));this.syncModals.set(session.record.id,modal);modal.open();
+  }
   async onClose():Promise<void> {
-    this.disposed=true;this.previewComponent?.unload();this.observer?.disconnect();for(const modal of this.closeModals.values())modal.close();await Promise.all([...this.panes.keys()].map(id=>this.disposePane(id)));
+    this.disposed=true;this.previewComponent?.unload();this.observer?.disconnect();for(const modal of this.closeModals.values())modal.close();for(const modal of this.syncModals.values())modal.close();await Promise.all([...this.panes.keys()].map(id=>this.disposePane(id)));
   }
 }

@@ -1,4 +1,4 @@
-import { hash,patchNote,region } from './note';
+import { binding,hash,patchNote,region } from './note';
 import type {ProjectionTrust} from './proof';
 export interface NoteAccess { read(path:string):Promise<string>; update(path:string,transform:(text:string)=>string):Promise<void>; }
 export class NoteWriter {
@@ -23,6 +23,17 @@ export class NoteWriter {
     this.expected=next;
     this.lastHash=hash(next!);
     return this.lastHash;
+  }
+  async recover(body:string,document:string):Promise<string> {
+    let next:string|null=null;
+    await this.access.update(this.path,text=>{
+      if(text!==document)throw new Error('备份后笔记又发生变化，已保留原文，请重新恢复');
+      if(binding(text)!==this.id)throw new Error('文件会话绑定已变化，拒绝覆盖');
+      const old=region(text,this.id);if(!old)throw new Error('找不到完整会话区域，已保留原文，请检查开始和结束标记');
+      const patched=patchNote(text,this.id,body,old.text);
+      next=region(patched,this.id)!.text;this.proof?.stage(hash(next));return patched;
+    });
+    this.expected=next;this.lastHash=hash(next!);this.initialized=true;return this.lastHash;
   }
   reset(): void { this.expected=null;this.lastHash=undefined;this.initialized=false; }
 }

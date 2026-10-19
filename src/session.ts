@@ -2,6 +2,7 @@ import { spawn,type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createReadStream,existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { stat,open } from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import type { BridgeEvent,RecordData,Profile } from './types';
 import { STATE_LABEL } from './types';
 import { Transcript } from './transcript';
@@ -38,16 +39,27 @@ export class Session {
   private refreshing?:Promise<void>;
   private stopTask?:Promise<void>;
   private closing=false;
+  syncPending=false;
+  private recordingAck?:{request:string;resolve:()=>void;reject:(error:Error)=>void};
   constructor(readonly record:RecordData,readonly journal:string,readonly writer:NoteWriter,readonly host:SessionHost) {this.transcript=record.transcriptVersion===2?new Transcript():new LegacyTranscript();this.native=new NativeArchive(journal.replace(/\.jsonl$/,'.opencode.json'));}
   get live():boolean { return this.record.state==='running'||this.record.state==='starting'; }
+  get syncEnabled():boolean{return this.record.syncEnabled!==false;}
+  get syncing():boolean{return this.syncEnabled&&!this.saveError&&!this.historyError&&!this.record.journalError&&!this.legacyFrozen;}
+  assertCompleteHistory():void{if(this.historyIncomplete||this.historyError||this.record.journalError)throw new Error('日志不完整，不能重新写入笔记：'+(this.historyError||this.record.journalError||'末尾存在未写完的数据'));}
   async initialize():Promise<void> {
     try {const file=await open(this.journal,'wx',0o600);try{await file.sync();}finally{await file.close();}}
     catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
   }
   private async ingest(event:BridgeEvent,replay=false):Promise<void> {
+    if(event.seq>0&&event.seq!==this.seq+1){this.historyIncomplete=true;this.historyError=this.saveError='日志事件序号不连续，已停止同步并保留原文';this.record.journalError=this.historyError;throw new Error(this.historyError);}
     if(event.seq>0)this.seq=event.seq; this.revision++;
     if(event.type==='output' && event.data!==undefined) await this.transcript.feed(event.data);
     if(event.type==='interaction'&&this.transcript instanceof Transcript)await this.transcript.interaction(event);
+    if(event.type==='recording'){
+      if(!(this.transcript instanceof Transcript))throw new Error('旧记录不支持同步开关，请新建终端');
+      await this.transcript.setRecording(event.enabled!);this.record.syncEnabled=event.enabled;this.record.recordingVersion=1;
+      const ack=this.recordingAck;if(!replay&&ack?.request===event.request)ack?.resolve();
+    }
     if(event.type==='resize' && event.cols && event.rows) this.transcript.resize(event.cols,event.rows);
     if(event.type==='start') {
       if(event.cols && event.rows) this.transcript.resize(event.cols,event.rows);
@@ -93,9 +105,12 @@ export class Session {
       if(savedSequence&&Number(savedSequence[1])>this.seq)throw new Error('原始日志短于笔记中已保存的记录；已保留笔记，不能用残缺日志重建');
       if(truncated) {this.historyIncomplete=true;this.error='已恢复完整日志；末尾存在中断时未写完整的数据';}
       if(this.record.transcriptVersion!==2&&this.seq>0&&saved){await this.writer.init();this.legacyFrozen=true;this.savedRevision=this.revision;}
+      // A new projection must not silently replace a readable note during upgrade.
+      if(this.record.transcriptVersion===2&&!this.record.recordingVersion&&this.seq>0&&saved)this.savedRevision=this.revision;
     } finally { lines.close();stream.destroy(); }
   }
   async start(profile:Profile,cwd:string):Promise<void> {
+    this.assertCompleteHistory();
     if(this.refreshing||this.stopTask||this.closing||this.child&&!this.live)throw new Error('会话正在同步或收尾，请稍后继续');
     if(this.live) return;
     if(this.historyError)throw new Error(this.historyError);
@@ -154,7 +169,7 @@ export class Session {
             if(this.live) this.record.state=this.stopping?'ended':'interrupted';
             if(stderr && !this.error) this.error=stderr;
             this.revision++;await this.flush();this.host.changed(this);
-          }).catch(error=>{this.error=(error as Error).message;this.host.changed(this);}).finally(()=>{this.closing=false;resolve();});
+          }).catch(error=>{this.error=(error as Error).message;this.host.changed(this);}).finally(()=>{this.recordingAck?.reject(new Error('终端已结束，请重试切换'));this.closing=false;resolve();});
         });
       });
       child.stdin.on('error',error=>{if((error as NodeJS.ErrnoException).code==='EPIPE'&&(this.stopping||this.record.state==='ended'))return;this.error=error.message;this.host.changed(this);});
@@ -243,6 +258,7 @@ export class Session {
         const event=checkedEvent(JSON.parse(line));if(event.seq!==seq+1)throw new Error('原始日志事件不连续，不能生成完整副本');seq=event.seq;
         if(event.type==='output'&&event.data!==undefined)await projection.feed(event.data);
         if(event.type==='interaction')await projection.interaction(event);
+        if(event.type==='recording')await projection.setRecording(event.enabled!);
         if((event.type==='start'||event.type==='resize')&&event.cols&&event.rows)projection.resize(event.cols,event.rows);
       }
       if(seq!==limit)throw new Error('原始日志不完整，不能生成副本');return await projection.render();
@@ -262,10 +278,54 @@ export class Session {
     const terminal=await this.transcript.render();
     return this.native.snapshot?this.native.render()+'\n> [!abstract]- 终端显示记录（含界面重绘）\n'+terminal.split('\n').map(line=>'> '+line).join('\n')+'\n':terminal;
   }
-  flush():Promise<void> {
+  async savedContent():Promise<string>{
+    const saved=region(await this.writer.access.read(this.record.path),this.record.id);
+    return saved?saved.text.slice(saved.text.indexOf('\n')+1,saved.text.lastIndexOf('\n')):'_尚无已保存记录。_';
+  }
+  async setRecording(enabled:boolean):Promise<void>{
+    this.assertCompleteHistory();
+    if(this.syncPending)throw new Error('正在切换同步，请稍候');
+    if(!(this.transcript instanceof Transcript)||this.legacyFrozen||this.record.native)throw new Error('历史增强会话请新建系统终端使用同步开关');
+    if(this.stopTask||this.closing)throw new Error('会话正在结束，请稍后切换');
+    if(enabled&&(this.historyError||this.saveError))throw new Error('请先备份并恢复笔记同步');
+    if(this.syncEnabled===enabled)return;
+    this.syncPending=true;this.host.changed(this);
+    const task=this.writes.then(async()=>{
+      if(this.startingTask)await this.startingTask;
+      await this.events;
+      const event:BridgeEvent={type:'recording',enabled,request:randomUUID(),seq:this.seq+1,time:new Date().toISOString()};
+      if(this.child){
+        await new Promise<void>((resolve,reject)=>{
+          const timer=setTimeout(()=>reject(new Error('同步开关尚未收到落盘确认，请检查终端状态')),10000);
+          this.recordingAck={request:event.request!,resolve:()=>{clearTimeout(timer);resolve();},reject:error=>{clearTimeout(timer);reject(error);}};
+          this.send({type:'recording',enabled,request:event.request});
+        }).finally(()=>{this.recordingAck=undefined;});
+      }else{
+        await this.initialize();const file=await open(this.journal,'a',0o600);
+        try{try{await file.writeFile(JSON.stringify(event)+'\n','utf8');await file.sync();}finally{await file.close();}}
+        catch(error){this.historyIncomplete=true;this.historyError=this.saveError='同步控制日志未能确认写入，已保留日志并停止追加：'+(error as Error).message;this.record.journalError=this.historyError;throw new Error(this.historyError);}
+        await this.ingest(event);
+      }
+      if(enabled||!this.saveError)await this.flush(true);await this.host.persist?.();
+      if(enabled&&this.saveError)throw new Error(this.saveError);
+    });
+    this.writes=task.catch(()=>{});
+    try{await task;}finally{this.syncPending=false;this.host.changed(this);}
+  }
+  async recoverNote(document:string):Promise<void>{
+    const task=this.saveQueue.then(async()=>{
+      await this.events;
+      this.assertCompleteHistory();
+      const revision=this.revision;
+      this.record.lastHash=await this.writer.recover(await this.body(),document);
+      this.savedRevision=revision;this.saveError='';this.savedAt=new Date().toLocaleTimeString();this.host.changed(this);
+    });
+    this.saveQueue=task.catch(()=>{});return task;
+  }
+  flush(boundary=false):Promise<void> {
     this.saveQueue=this.saveQueue.then(async()=>{
       await this.events;
-      if(this.legacyFrozen||this.historyError||this.savedRevision===this.revision || this.record.state==='missing') return;
+      if(!boundary&&!this.syncEnabled||this.legacyFrozen||this.historyError||this.savedRevision===this.revision || this.record.state==='missing') return;
       const revision=this.revision;
       try {
         const body=await this.body();

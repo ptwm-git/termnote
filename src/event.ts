@@ -11,6 +11,7 @@ export function checkedEvent(value:unknown):BridgeEvent{
     case 'resize':valid&&=dimension(e.cols)&&dimension(e.rows);break;
     case 'exit':valid&&=e.code===undefined||e.code===null||Number.isInteger(e.code);break;
     case 'error':valid&&=typeof e.message==='string';break;
+    case 'recording':valid&&=typeof e.enabled==='boolean'&&(e.request===undefined||typeof e.request==='string'&&e.request.length<=100);break;
     case 'interaction':valid&&=['edit','submit','cancel'].includes(String(e.action))&&(e.data===undefined||typeof e.data==='string')&&(e.echo===undefined||typeof e.echo==='string')&&(e.inputKind===undefined||['input','operation'].includes(String(e.inputKind)))&&(e.inputLines===undefined||Number.isInteger(e.inputLines)&&Number(e.inputLines)>=1&&Number(e.inputLines)<=262144);break;
     default:valid=false;
   }

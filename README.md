@@ -10,6 +10,7 @@ TermNote is a desktop Obsidian plugin with a terminal in the right sidebar: a co
 - Render Chinese fallback fonts with a 1.3 terminal line height; theme font changes are remeasured.
 - Configure each area's font size, background and text color independently. Presets include black, gray, light and the Obsidian theme.
 - Save an incremental conversation: submitted visible input as **我** (me), output as **终端** (terminal), and menu confirmations as **操作** (action). Streaming text updates its current block; screen repainting does not append whole-screen snapshots.
+- Control note writing per tab with the first toolbar button, **同步 ON/OFF**. OFF keeps the terminal running and leaves the note unchanged; resuming does not backfill the OFF interval. Raw terminal logs remain stored. A conflict opens a confirmation to create a complete readable backup beside the note before restoring sync. Legacy enhanced histories keep their existing read-only controls.
 - Keep the raw output event log for recovery. Export readable Markdown using the native **Save As** dialog. Older notes remain intact; **生成精简记录副本** creates a separate compact copy beside the original.
 - Preserve older records and explicitly resume previously bound OpenCode sessions. New sessions always use the system shell.
 
@@ -77,6 +78,16 @@ codex
 - 「在中央打开备份笔记」可正常编辑和查阅 Markdown；「导出 Markdown 到本地」通过系统另存对话框选择保存位置；取消不写文件。复制按钮复制已保存的完整备份。
 - 正常退出 Obsidian 会结束程序；再次打开恢复文字和标签，不自动执行历史命令。新的对话用「＋」。
 
+## 笔记同步开关
+
+文件名右侧第一个操作是 **同步 ON/OFF**，每个标签独立，默认 ON。
+
+- **ON**：新输入与输出持续保存到当前标签绑定的 Markdown。
+- **OFF**：终端继续运行，笔记和上方已保存预览保持不变；停止或导出也不会补写。再 ON 只从该边界继续，关闭期间的内容不补录。
+- 开关状态及边界会保留，重新加载不自动启动程序。原始终端日志仍保存输出，OFF 控制的是写入笔记，不是隐私擦除。
+- 出现红字“待恢复”时，点击开关，确认 **备份并开启同步**。插件先在同目录保存当前文件的完整可读副本，再恢复会话区域；区域外正文保留。取消不改笔记；日志损坏、边界/绑定变化或备份失败时拒绝覆盖。也可选择“仅关闭同步”。
+- 历史冻结原件及旧原生增强会话保留既有行为，开关禁用；使用“＋”新建系统终端可使用该功能。
+
 ## 保存、恢复与旧版升级
 
 从 0.3.1 开始，新建标签使用增量对话格式：
@@ -88,9 +99,11 @@ codex
 
 通用终端依据实际显示内容与操作边界整理，不假定所有程序都具有用户/助手/工具结构。未知全屏程序可能保留界面文字或没有可识别输入框；无法确认角色的同文边框行会优先保留为输出，因此这类界面仍可能出现输入回顾文字；未能确认的输入不会猜测归类，屏幕从未展示的内容也无法凭空补齐。原始输出日志保留全部终端输出，因此仍可能包含回显草稿或程序打印的敏感内容；分享前请检查。插件不单独保存原始按键。
 
-备份的会话区域使用 HTML 注释标记。可以编辑区域外正文；若修改或删除受管理区域，插件停止覆盖并显示待同步。「更多操作 → 恢复记录」会先备份原笔记，再从完整日志重建。日志可从更多操作在系统文件管理器中显示。日志缺失或损坏时保留原笔记，不用空记录覆盖唯一历史。
+备份的会话区域使用 HTML 注释标记。可以编辑区域外正文；若受管理区域发生变化，插件停止覆盖并显示待恢复；变化也可能来自编辑器或其他插件。点击同步开关，或「更多操作 → 备份当前文件并恢复同步」，确认后先生成同目录完整副本，再从完整日志恢复；边界标记缺失时保留原文并提示检查标记。日志可从更多操作在系统文件管理器中显示。日志缺失或损坏时保留原笔记，不用空记录覆盖唯一历史。
 
 删除来源文档不会删除已经形成的备份，也不会把后来同路径创建的新文档关联到旧终端。删除备份文件则停止对应会话并保留日志，不自动重建被删除的文件。
+
+升级 0.3.4 时已有 v2 记录也保留原件，不在加载/退出时静默重投影；显式恢复前保留完整备份。新版排除终端底部的块状进度动画和独立快捷键状态行，换行重排更新当前回答，真实重复与跨轮同文仍保留。
 
 升级 0.3.1 后，旧记录默认原文保留，不自动批量去重。打开旧标签，在「更多操作 → 生成精简记录副本」生成同目录“原名（精简记录）.md”；重复操作自动避开重名，原件及日志不变。旧日志没有单独的输入确认，副本不会猜测用户角色；日志缺失或损坏时拒绝生成完整副本。继续旧 OpenCode 增强会话会先另建“原名（继续）.md”，后续内容写入该文件。
 

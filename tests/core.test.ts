@@ -16,7 +16,7 @@ test('笔记更新保留前后正文、检测用户修改与区域删除',()=>{
   assert.equal(binding(first),id);const old=region(first,id)!.text;
   const next=patchNote(first+'\n用户追加',id,'第二次输出',old);
   assert.match(next,/# 用户笔记\n内容/);assert.match(next,/用户追加$/);assert.match(next,/第二次输出/);
-  assert.throws(()=>patchNote(first.replace('初始输出','用户编辑'),id,'自动输出',old),/手动修改/);
+  assert.throws(()=>patchNote(first.replace('初始输出','用户编辑'),id,'自动输出',old),/发生变化/);
   assert.throws(()=>patchNote('# 用户删除了记录',id,'自动输出',old));
   assert.throws(()=>region(first.replace(markers(id).end,''),id),/边界/);
 });
@@ -33,7 +33,7 @@ test('保存器在关闭编辑器或重启后检查基线，失败不覆盖文�
   const writer=new NoteWriter(access,id,'A.md');const lastHash=await writer.save('one');
   text+='\n另一个编辑器追加的文字';await writer.save('two');assert.match(text,/另一个编辑器/);
   const restarted=new NoteWriter(access,id,'A.md',lastHash);await assert.rejects(restarted.init(),/上次保存后/);
-  text=text.replace('two','手动改过的内容');await assert.rejects(writer.save('three'),/手动修改/);assert.match(text,/手动改过/);
+  text=text.replace('two','手动改过的内容');await assert.rejects(writer.save('three'),/发生变化/);assert.match(text,/手动改过/);
   assert.notEqual(hash(text),lastHash);
 });
 test('ANSI 颜色、回车覆盖、中文和自动换行可读',async()=>{

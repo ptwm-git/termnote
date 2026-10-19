@@ -12,6 +12,8 @@
 .ant-dot{width:5px;height:5px;border-radius:50%;background:var(--text-faint);flex-shrink:0}
 .ant-dot.is-running{background:var(--color-green)}.ant-dot.is-error{background:var(--text-error)}
 .ant-toolbar{display:flex;align-items:center;gap:3px;padding:3px 5px;border-bottom:1px solid var(--background-modifier-border);min-height:33px;flex-shrink:0;flex-wrap:wrap}
+.ant-workbench .ant-sync-button{font-family:var(--font-interface);font-size:12px;height:26px;padding:3px 7px;box-shadow:none;flex-shrink:0;color:var(--text-muted)}
+.ant-workbench .ant-sync-button.is-on{color:var(--text-success,var(--color-green))}
 .ant-file{flex:1;min-width:65px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.ant-title{font-size:12px;font-weight:600;margin-right:auto}
 .ant-status{padding:4px 7px;font-size:11px;line-height:1.4;color:var(--text-muted);overflow-wrap:anywhere;max-height:48px;overflow:auto;flex-shrink:0;border-bottom:1px solid var(--background-modifier-border)}
 .ant-message{padding:3px 7px;white-space:pre-wrap;font-size:11px;max-height:72px;overflow:auto;flex-shrink:0}.ant-message:empty{display:none}.ant-workbench .ant-error,.ant-settings .ant-error{color:var(--text-error)}

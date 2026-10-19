@@ -106,3 +106,38 @@ test('ConPTY在下一次隐藏输入后重绘历史仍排除已确认回显',asy
 test('多行输入的裸末行不得进入永久提示符回显集合',async()=>{
  const t=new Transcript(60,8);try{await t.feed('READY> ');await t.interaction({...event('edit'),inputLines:2});await t.feed('line one\r\nline two');const v=await t.visibleInput('line one\nline two');assert.equal(v.text,'line one\nline two');await t.interaction(event('submit',v.text,v.echo));await t.feed('\x1b[2J\x1b[Hline two\r\n');const text=await t.render();assert.equal(text.split('\n').filter(line=>line==='line two').length,2,text);assert.match(text,/### 终端/);}finally{t.dispose();}
 });
+
+test('同步绘制中临时滚屏后恢复同一画面，不反复归档静态状态栏',async()=>{
+ const t=new Transcript(40,6),frame='标题\r\n正文\r\n\r\n\r\n\r\nesc interrupt';try{
+  await t.feed('\x1b[?1049h\x1b[?2026h\x1b[H'+frame+'\x1b[?2026l');
+  for(let i=0;i<20;i++)await t.feed('\x1b[?2026h\x1b[6;1H\r\n\x1b[H\x1b[2J'+frame+'\x1b[?2026l');
+  const text=await t.render();assert.equal(count(text,'标题'),1,text);assert.equal(count(text,'正文'),1,text);assert.equal(count(text,'esc interrupt'),0,text);
+ }finally{t.dispose();}
+});
+test('中文回答按物理行重排增长时每个前缀只更新一次',async()=>{
+ const t=new Transcript(40,10),answer='我已经读完这篇文章也核实了当前社区插件市场的真实情况下面分几部分说明这篇文章把多个不同功能的内容混合在一起';try{
+  await t.feed('\x1b[?1049h');
+  for(let n=1;n<=answer.length;n++){
+   const chars=Array.from(answer.slice(0,n)),rows=[];while(chars.length)rows.push(chars.splice(0,20).join(''));
+   await t.feed('\x1b[?2026h\x1b[H\x1b[2J'+rows.join('\r\n')+'\x1b[10;1Hesc interrupt\x1b[?2026l');
+  }
+  const text=await t.render();assert.equal(count(text,'我已经读完'),1,text);assert.equal(count(text,'esc interrupt'),0,text);assert.ok(text.replaceAll('\n','').includes(answer),text);
+ }finally{t.dispose();}
+});
+
+test('底部块状动画/金额/快捷键提示不归档，正文中的同文仍保留',async()=>{
+ const t=new Transcript(80,12);try{
+  await t.feed('\x1b[?1049h');
+  for(let i=0;i<30;i++)await t.feed('\x1b[?2026h\x1b[H回答正文\x1b[K\x1b[11;1H'+('■'.repeat(i%10)+'⬝'.repeat(10-i%10))+' esc interrupt\x1b[K\x1b[12;1H'+i+'.1K · $0.02 ctrl+p commands\x1b[K\x1b[?2026l');
+  const text=await t.render();assert.equal(count(text,'回答正文'),1,text);assert.doesNotMatch(text,/esc interrupt|ctrl\+p commands|0.02/);
+  await t.feed('\x1b[?2026h\x1b[2J\x1b[H正文说明：esc interrupt\x1b[?2026l');assert.match(await t.render(),/正文说明：esc interrupt/);
+ }finally{t.dispose();}
+});
+
+test('已输出长行收短并移至下一行时不重复旧尾部',async()=>{
+ const t=new Transcript(40,10),frame=(s:string)=>'\x1b[?2026h\x1b[H\x1b[2J'+s.replaceAll('\n','\r\n')+'\x1b[?2026l';try{
+  await t.feed('\x1b[?1049h'+frame('我已经读完这篇文章并核实信息'));await t.feed(frame('我已经读完这篇文章\n并核实信息以及补充内容'));
+  const text=await t.render();assert.equal(count(text,'并核实信息'),1,text);assert.match(text,/补充内容/);
+  await t.feed('\x1b[8;1HThe shortcut esc interrupt stops execution.');assert.match(await t.render(),/The shortcut esc interrupt stops execution/);
+ }finally{t.dispose();}
+});

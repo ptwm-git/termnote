@@ -1,8 +1,8 @@
 import { FileSystemAdapter,Notice,TFile,TFolder,type TAbstractFile,type App } from 'obsidian';
 import { randomUUID } from 'node:crypto';
 import { join,resolve } from 'node:path';
-import { mkdir,writeFile,unlink } from 'node:fs/promises';
-import { binding,detachCopiedBinding,markers,region } from './note';
+import { mkdir,unlink } from 'node:fs/promises';
+import { binding,detachCopiedBinding,region } from './note';
 import { fileName,firstAvailableName,parentPath,pathFor,validateName } from './naming';
 import type { BridgeEvent,PluginData,Profile,RecordData } from './types';
 import { Session } from './session';
@@ -83,7 +83,7 @@ export class Manager {
         if(record.state==='missing')record.state='idle';
         await session.restore();if(stale()){session.historyError='路径变更中，等待重新核验';return;}restored=true;await session.writer.init();await session.flush();
       }
-      catch(error) {record.state='failed';session.saveError=(error as Error).message;if(!restored)session.historyError=session.saveError;}
+      catch(error) {session.saveError=(error as Error).message;if(!restored){record.state='failed';session.historyError=session.saveError;}}
   }
   async load():Promise<void> {
     await mkdir(join(this.base,'.agent-note-terminal'),{recursive:true,mode:0o700});
@@ -123,7 +123,7 @@ export class Manager {
       else id=oldId as `${string}-${string}-${string}-${string}-${string}`;
     }
     const profile=SYSTEM_PROFILE_ID;
-    const record:RecordData={id,transcriptVersion:2,path:file.path,...(sourcePath?{sourcePath}:{}),...(generated?{generated:true as const}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
+    const record:RecordData={id,transcriptVersion:2,recordingVersion:1,path:file.path,...(sourcePath?{sourcePath}:{}),...(generated?{generated:true as const}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
     const session=this.make(record);this.data.records.push(record);
     if(oldId===id) await session.restore();else await session.initialize();
     await session.flush();await this.persist();this.changed();return session;
@@ -242,21 +242,25 @@ export class Manager {
     }
     this.changed();await this.persist();
   }
-  async repair(session:Session):Promise<void> {
-    if(session.historyError)throw new Error(session.historyError);
-    await session.drain();
-    const content=await this.notes.read(session.record.path);
-    // Make an ordinary readable backup before replacing a user-edited region.
-    const backup=join(this.base,'.agent-note-terminal',`${session.record.id}-backup-${Date.now()}.md`);
-    await writeFile(backup,content,{encoding:'utf8',mode:0o600});
-    const m=markers(session.record.id);
-    await this.notes.update(session.record.path,text=>{
-      let old;
-      try {old=region(text,session.record.id);} catch {throw new Error('记录边界损坏：请恢复完整的开始/结束标记后再重试，已备份原笔记');}
-      return old?text.slice(0,old.from)+text.slice(old.to):text;
+  async setRecording(session:Session,enabled:boolean):Promise<void>{
+    if(this.isClosing(session))throw new Error('会话正在关闭');
+    return this.serial(async()=>{
+      if(this.sessions.get(session.record.id)!==session||this.isClosing(session))throw new Error('此会话已关闭');
+      await session.setRecording(enabled);this.changed();
     });
-    session.writer.reset();session.saveError='';session.revision++;await session.flush();await this.persist();this.changed();
   }
+  async repair(session:Session):Promise<string> {return this.serial(async()=>{
+    if(this.sessions.get(session.record.id)!==session||this.isClosing(session))throw new Error('此会话已关闭');
+    session.assertCompleteHistory();
+    await session.drain();const content=await this.notes.read(session.record.path);
+    if(binding(content)!==session.record.id)throw new Error('文件会话绑定已变化，拒绝覆盖');
+    if(!region(content,session.record.id))throw new Error('找不到完整会话区域，已保留原文，请检查开始和结束标记');
+    const folder=parentPath(session.record.path),name=session.record.path.split('/').pop()!.replace(/\.md$/,'').slice(0,150)+'（同步恢复前备份 '+Date.now()+'）';
+    let backup=pathFor(folder,name+'.md'),n=1;while(await this.app.vault.adapter.exists(backup))backup=pathFor(folder,name+' '+(++n)+'.md');
+    await this.app.vault.create(backup,content);
+    try{await session.recoverNote(content);await this.persist();this.changed();return backup;}
+    catch(error){throw new Error((error as Error).message+'；原文备份：'+backup);}
+  });}
   hide(session:Session):void {session.record.visible=false;this.changed();}
   isClosing(session:Session):boolean{return this.closingRecords.has(session.record.id);}
   canDiscard(session:Session):boolean{return session.record.generated===true||!!session.record.sourcePath&&session.record.sourcePath!==session.record.path;}

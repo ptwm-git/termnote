@@ -33,7 +33,7 @@ export function fence(text: string): string {
 }
 export function patchNote(text: string,id: string,body: string,expected: string|null): string {
   const m=markers(id), old=region(text,id), next=m.start+'\n'+body+'\n'+m.end;
-  if((old?.text??null)!==expected) throw new Error('笔记中的会话记录已被手动修改，已暂停同步；原始日志仍保留');
+  if((old?.text??null)!==expected) throw new Error('笔记会话区域发生变化，已暂停写入以保护原文；点击同步开关备份并恢复');
   if(old) return text.slice(0,old.from)+next+text.slice(old.to);
   if(expected!==null) throw new Error('会话记录区域被删除，请先恢复记录');
   const hasBinding=binding(text)===id;

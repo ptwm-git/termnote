@@ -113,3 +113,19 @@ InputTracker 只在内存管理编辑状态；提交前等待已回显的终端�
 xterm DOM按W的英文fontBoundingBox测量格高，默认lineHeight=1并逐行overflow:hidden，macOS中文回退字体超出格高时笔画被切。使用xterm lineHeight=1.3（12px实测14→18px行框），让渲染、光标、fit及PTY尺寸同源；主题改变更新fontFamily参与外观key。不放宽行overflow，不使用top偏移。
 
 onload先建立Manager、注册视图与事件，然后onLayoutReady启动唯一加载Promise；首次布局时不await该Promise，已经就绪的手动启用则等待完成。公开入口与删除事件等待ready；恢复前的rename即时更新索引路径和已有writer路径，加载中移动的ID在首轮结束后按新路径和UUID重新建立投影，并恢复原可见性；初始视图保留activeId，显示正在恢复而不清空选择。shutdown若加载未开始先将Manager关闭并释放ready，若正在加载先等待收尾。绑定核验后将旧missing改idle再从完整日志恢复；异UUID不变。
+
+
+## 0.3.4 同步边界与恢复
+
+- v2 Transcript继续处理终端缓冲，但OFF时新增输出/输入不进入可读块；恢复ON保留屏幕基线，后续重绘不补OFF历史。recording控制与output共用bridge日志锁/序号，Session等待落盘确认后更新UI；停止状态用同格式fsync追加事件。record.syncEnabled缓存开关，日志为重放依据。
+- Session切换排入输入队列，边界输出先收束；OFF后flush短路，停止/导出不回填；上方预览读取已保存Markdown会话区域而非内存内容。新类型经checkedEvent验证，回放与精简副本均遵守边界。
+- 冲突恢复Manager串行+Session保存队列；先同目录生成独立可读备份，NoteWriter在原子update中核对完整源文档与UUID，直接替换目标区域并更新来源证明，避免先删区域后写入的空窗。损坏/变化拒绝，保留备份路径。
+- 增量屏幕对齐补充长句重排/底部重绘回归，保留既有真实重复与输入保护。保持无新增依赖、原生UI、测试库路径保护、fixed SHA预览/CI/attestation/BRAT/正式扫描发布流程。
+
+0.3.4审查修正：OFF基线按scope保存有序行序列，逐帧按未消费的字符区间和出现次数消费，允许同一基线行在alternate重入后反序出现，允许ON新增同文/子串；跨缓冲重入和硬换行重排仍识别OFF片段。默认排除仅最后三行中形态明确的块状动画/独立快捷键/数字统计提示，正文提及快捷键保留；长行收短且尾部移至下一行时更新旧行。截断历史统一禁止恢复和追加开关事件。recordingVersion=1标记新版，旧v2无标记时升级加载只确认已存revision，显式操作前不重写原件。
+
+0.3.4最终边界修正：普通行回车覆盖后保留OFF残留尾部基线，后续独立PTY分包/换行仍过滤残留，明确擦除后再清除此基线。OFF行在全屏重入后发生重排时消费各自区间，不因先匹配后行而丢掉前行的屏蔽状态。
+
+普通终端半行OFF→ON采用实际打印单元格来源：只在此边界对ANSI打印/控制分段，读取公开buffer单元格宽度和光标位置，记录ON实际覆盖列，跳过残留OFF列。跨分包、同文重写和横向光标跳转不再靠相同尾缀猜测；全屏继续使用屏幕差异投影。
+
+来源列随普通行CSI P删除、CSI @插入和IRM插入模式平移；控制序列完成后刷新来源快照，再处理后续换行，确保同一输出包与分包一致。

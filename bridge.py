@@ -175,22 +175,42 @@ class Journal:
         if os.name != 'nt':
             os.chmod(path, 0o600)
         self.lock = threading.Lock()
+        self.failed = False
+        self.failure_reported = False
 
     def emit(self, kind, **payload):
         with self.lock:
+            if self.failed:
+                raise OSError('日志写入已经失败，已停止追加')
             self.seq += 1
             event = dict(type=kind, seq=self.seq,
                          time=datetime.datetime.now(datetime.timezone.utc).isoformat(), **payload)
             line = (json.dumps(event, ensure_ascii=True) + '\n').encode('utf-8')
-            remaining = memoryview(line)
-            while remaining:
-                written = self.file.write(remaining)
-                if not written:
-                    raise OSError('日志未能完整写入')
-                remaining = remaining[written:]
-            os.fsync(self.file.fileno())
-            sys.stdout.buffer.write(line)
-            sys.stdout.buffer.flush()
+            try:
+                remaining = memoryview(line)
+                while remaining:
+                    written = self.file.write(remaining)
+                    if not written:
+                        raise OSError('日志未能完整写入')
+                    remaining = remaining[written:]
+                os.fsync(self.file.fileno())
+                sys.stdout.buffer.write(line)
+                sys.stdout.buffer.flush()
+            except (OSError, ValueError):
+                self.failed = True
+                raise
+
+    def report_failure(self, message):
+        with self.lock:
+            if self.failure_reported:
+                return
+            self.failure_reported = True
+            try:
+                event = dict(type='error', seq=-1, time='', message='日志写入失败或连接关闭：'+str(message))
+                sys.stdout.buffer.write((json.dumps(event)+'\n').encode('utf-8'))
+                sys.stdout.buffer.flush()
+            except (OSError, ValueError):
+                pass
 
 
 def check():
@@ -328,6 +348,9 @@ def main():
                     kind = message.get('type')
                     if kind == 'write':
                         terminal.write(message['data'])
+                    elif kind == 'recording':
+                        if isinstance(message.get('enabled'), bool) and isinstance(message.get('request'), str):
+                            journal.emit('recording', enabled=message['enabled'], request=message['request'][:100])
                     elif kind == 'interaction':
                         action = message.get('action')
                         if action in ('edit', 'submit', 'cancel'):
@@ -352,8 +375,9 @@ def main():
                         journal.emit('resize', cols=cols, rows=rows)
                     elif kind == 'stop':
                         break
-            except (BrokenPipeError, EOFError, OSError, ValueError):
-                pass
+            except (BrokenPipeError, EOFError, OSError, ValueError) as exc:
+                if journal.failed:
+                    journal.report_failure(exc)
             finally:
                 stopping.set()
                 terminal.stop()
@@ -371,17 +395,14 @@ def main():
         tail = decoder.decode(b'', final=True)
         if tail:
             journal.emit('output', data=tail)
-        journal.emit('exit', code=terminal.exit_code())
+        if not journal.failed:
+            journal.emit('exit', code=terminal.exit_code())
     except BaseException as exc:
         try:
             journal.emit('error', message=str(exc))
         except (OSError, BrokenPipeError):
             # stdout is still used to report a disk failure; no false durable acknowledgement.
-            event = dict(type='error', seq=-1, time='', message='日志写入失败或连接关闭：'+str(exc))
-            try:
-                print(json.dumps(event), flush=True)
-            except (OSError, BrokenPipeError):
-                pass
+            journal.report_failure(exc)
     finally:
         stopping.set()
         if terminal is not None:

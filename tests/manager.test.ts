@@ -9,8 +9,8 @@ import {DEFAULT_SETTINGS,type PluginData} from '../src/types';
 import {binding,patchNote} from '../src/note';
 
 // Exercise the real Manager/Session/writer against an in-memory Obsidian file API.
-let Manager:any,FileSystemAdapter:any,TFile:any,TFolder:any;
-const api=build({stdin:{contents:"export {Manager} from './src/manager';export {FileSystemAdapter,TFile,TFolder} from 'obsidian';",resolveDir:resolve('.'),loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,logLevel:'silent',plugins:[{name:'obsidian-test-api',setup(builder){
+let Manager:any,FileSystemAdapter:any,TFile:any,TFolder:any,MarkdownView:any;
+const api=build({stdin:{contents:"export {Manager} from './src/manager';export {FileSystemAdapter,TFile,TFolder,MarkdownView} from 'obsidian';",resolveDir:resolve('.'),loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,logLevel:'silent',plugins:[{name:'obsidian-test-api',setup(builder){
   builder.onResolve({filter:/^obsidian$/},()=>({path:'api',namespace:'test'}));
   builder.onLoad({filter:/.*/,namespace:'test'},()=>({contents:`
     export class FileSystemAdapter {constructor(root){this.root=root;}getBasePath(){return this.root;}}
@@ -20,7 +20,7 @@ const api=build({stdin:{contents:"export {Manager} from './src/manager';export {
   `,loader:'js'}));
 }}]}).then(compiled=>{
   const builtModule={exports:{} as any};new Function('require','module','exports',compiled.outputFiles[0].text)(createRequire(resolve('package.json')),builtModule,builtModule.exports);
-  ({Manager,FileSystemAdapter,TFile,TFolder}=builtModule.exports);
+  ({Manager,FileSystemAdapter,TFile,TFolder,MarkdownView}=builtModule.exports);
 });
 
 async function fixture(){
@@ -217,4 +217,56 @@ test('共享来源的存在检查期间移动，重新核验新来源后保留�
     const loading=pending.load();await ready;f.files.delete(old);f.texts.delete(old);file.path='移动后的历史原件.md';f.files.set(file.path,file);f.texts.set(file.path,text);await pending.renamed(file,old);release();await loading;
     assert.equal(pending.data.records.length,0);await access(s.journal);assert.equal(f.texts.get(file.path),text);await pending.shutdown();
   }finally{await f.end();}
+});
+
+test('同步冲突恢复先创建同目录完整备份，再原子替换目标区域并保留正文',async()=>{
+ const f=await fixture();try{
+  const s=await f.manager.newNote('');const altered=f.texts.get(s.record.path)!.replace('_等待终端输出。_','用户保留的修改')+'\n区域外手工正文\n';f.texts.set(s.record.path,altered);
+  await s.transcript.feed('新的Agent回复\r\n');s.revision++;await s.flush();assert.match(s.saveError,/发生变化/);
+  const backup=await f.manager.repair(s);assert.equal(f.texts.get(backup),altered);assert.match(backup,/同步恢复前备份/);assert.equal(s.saveError,'');assert.match(f.texts.get(s.record.path)!,/新的Agent回复/);assert.match(f.texts.get(s.record.path)!,/区域外手工正文/);
+  await s.transcript.feed('后续内容\r\n');s.revision++;await s.flush();assert.equal(s.saveError,'');assert.match(f.texts.get(s.record.path)!,/后续内容/);
+ }finally{await f.end();}
+});
+test('恢复备份失败、备份后再次编辑、最终写入失败都保留已有文件',async()=>{
+ for(const mode of ['backup','changed','write']){
+  const f=await fixture();try{
+   const s=await f.manager.newNote(''),original=f.texts.get(s.record.path)!+'\n原文\n',create=f.app.vault.create,process=f.app.vault.process;
+   f.texts.set(s.record.path,original);
+   f.app.vault.create=async(path:string,text:string)=>{if(mode==='backup')throw Error('backup denied');const file=await create(path,text);if(mode==='changed')f.texts.set(s.record.path,original+'第二次编辑');return file;};
+   if(mode==='write')f.app.vault.process=async()=>{throw Error('write denied');};
+   await assert.rejects(f.manager.repair(s));assert.equal(f.texts.get(s.record.path),original+(mode==='changed'?'第二次编辑':''));
+   if(mode!=='backup')assert.ok([...f.texts.values()].some(t=>t===original));
+   f.app.vault.process=process;
+  }finally{await f.end();}
+ }
+});
+
+test('同一笔记多个编辑器一致更新；内容分叉时拒绝覆盖任何编辑器',async()=>{
+ const f=await fixture();try{
+  const s=await f.manager.newNote(''),values=[f.texts.get(s.record.path)!,f.texts.get(s.record.path)!];
+  const views=values.map((_,i)=>{const v=new MarkdownView();v.file=f.files.get(s.record.path);v.editor={getValue:()=>values[i],offsetToPos:(n:number)=>n,replaceRange:(insert:string,a:number,b:number)=>{values[i]=values[i].slice(0,a)+insert+values[i].slice(b);}};v.save=async()=>{f.texts.set(s.record.path,values[i]);};return {view:v};});
+  (f.app.workspace as any).getLeavesOfType=()=>views;
+  await s.transcript.feed('多窗口一致保存\r\n');s.revision++;await s.flush();assert.equal(s.saveError,'');assert.equal(values[0],values[1]);assert.equal(values[0],f.texts.get(s.record.path));
+  values[1]+='\n尚未保存的修改\n';const before=[...values];await s.transcript.feed('后续回复\r\n');s.revision++;await s.flush();assert.match(s.saveError,/多个编辑器内容不一致/);assert.deepEqual(values,before);
+ }finally{await f.end();}
+});
+
+test('恢复拒绝两个会话边界均缺失的笔记，完整原件保持',async()=>{
+ const f=await fixture();try{
+  const s=await f.manager.newNote(''),original=f.texts.get(s.record.path)!.replaceAll('<!-- ant:'+s.record.id+':start -->','').replaceAll('<!-- ant:'+s.record.id+':end -->','');f.texts.set(s.record.path,original);
+  await assert.rejects(f.manager.repair(s),/完整会话区域/);assert.equal(f.texts.get(s.record.path),original);
+ }finally{await f.end();}
+});
+
+test('打开编辑器恢复保存失败时回滚未再编辑的原文；后续用户输入保留',async()=>{
+ for(const editAfter of [false,true]){
+  const f=await fixture();try{
+   const s=await f.manager.newNote(''),original=f.texts.get(s.record.path)!.replace('_等待终端输出。_','用户原始记录');f.texts.set(s.record.path,original);let editor=original;
+   const view=new MarkdownView();view.file=f.files.get(s.record.path);view.editor={getValue:()=>editor,offsetToPos:(n:number)=>n,replaceRange:(insert:string,a:number,b:number)=>{editor=editor.slice(0,a)+insert+editor.slice(b);}};
+   view.save=async()=>{if(editAfter)editor+='用户后续输入';throw Error('save denied');};(f.app.workspace as any).getLeavesOfType=()=>[{view}];
+   await assert.rejects(f.manager.repair(s),/保存失败/);assert.equal(f.texts.get(s.record.path),original);
+   if(editAfter)assert.match(editor,/用户后续输入/);else assert.equal(editor,original);
+   assert.ok([...f.texts.entries()].some(([path,text])=>path!==s.record.path&&text===original));
+  }finally{await f.end();}
+ }
 });
