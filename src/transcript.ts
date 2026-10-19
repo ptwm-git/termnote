@@ -79,6 +79,9 @@ export class Transcript {
     if(this.terminal.buffer.active.type==='normal'&&!this.screenMode)return;
     const previousRows=this.frameRows,rows=this.viewportRows();this.frameRows=rows;if(!rows.length)return;
     this.echoIndices=new Set<number>();const boundaryCandidates=new Set<number>();
+    // ConPTY can redraw an ordinary prompt using cursor addressing. Only an
+    // exact submitted line with its non-empty prompt prefix counts as this echo.
+    if(clean(this.inputPrefix)&&this.submitted){const index=rows.findIndex(row=>compact(row.text)===compact(clean(this.inputPrefix+this.submitted))||this.echo&&compact(row.text)===compact(clean(this.echo)));if(index>=0)this.echoIndices.add(index);}
     for(const text of this.confirmedInputs){
       const positions=rows.flatMap((row,index)=>compact(row.text)===text&&/^\s*(?:[│┃]|[❯›>])/u.test(row.raw)?[index]:[]),budget=this.turns.filter(parts=>parts.includes(text)).length;
       for(let n=0;n<Math.min(budget,positions.length);n++){

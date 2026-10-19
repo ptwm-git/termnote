@@ -97,3 +97,6 @@ test('Ctrl-C后立即新输入时保留新提示符及完整命令边界',async(
 test('同文边框输入和回答保留回答，单独模糊边框行保守保留',async()=>{
  for(const answer of ['┃ OK\r\n┃ OK','┃ OK','┃ OK\r\nDetails']){const t=new Transcript(40,6);try{await t.feed('\x1b[?1049h\x1b[H❯ ');await submit(t,'OK');await t.feed('\x1b[2J\x1b[H'+answer);const text=await t.render();assert.equal(count(text,'### 我'),1);assert.equal(count(text,'### 终端'),1,text);assert.equal(text.split('\n').filter(line=>line==='OK').length,answer==='┃ OK\r\n┃ OK'?3:2,text);if(answer.includes('Details'))assert.match(text,/Details/);}finally{t.dispose();}}
 });
+test('ConPTY以光标重绘普通提示符时不重复归档输入',async()=>{
+ const t=new Transcript(60,8);try{await t.feed('READY> ');await submit(t,'中文提问');await t.feed('\x1b[1;1HREADY> 中文提问\r\nANSWER:中文提问\r\n');const text=await t.render();assert.equal(count(text,'中文提问'),2,text);assert.match(text,/ANSWER:中文提问/);}finally{t.dispose();}
+});
