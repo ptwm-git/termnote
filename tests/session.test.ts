@@ -121,7 +121,7 @@ test('真实PTY输入/输出独立持久化，隐藏密码不归档，重载一�
   const wait=async(fn:()=>boolean)=>{const until=Date.now()+15000;while(!fn()&&Date.now()<until){await s.flush();await new Promise(r=>setTimeout(r,30));}assert.ok(fn(),text);};
   try{
     const runner=join(folder,'prompt.py');await writeFile(runner,'import getpass\nx=input("READY> ")\nprint("ANSWER:"+x,flush=True)\np=getpass.getpass("Password: ")\nprint("FINISHED",flush=True)\n','utf8');
-    await s.start({id:'shell',name:'CLI',executable:python,args:['-u',runner],cwd:folder},folder);await wait(()=>s.seq>=2&&s.record.state==='running');
+    await s.start({id:'shell',name:'CLI',executable:python,args:['-u',runner],cwd:folder},folder);await wait(()=>text.includes('READY>')&&s.record.state==='running');
     s.write('中文提问\r');await wait(()=>text.includes('ANSWER:中文提问'));s.write('private-password-3971\r');await wait(()=>s.record.state==='ended');await s.stop();
     assert.match(text,/### 我/);assert.match(text,/### 终端/);assert.equal(text.split('中文提问').length-1,2,text);assert.doesNotMatch(text,/private-password/);assert.doesNotMatch(text,/终端界面快照/);
     const raw=await readFile(s.journal,'utf8');assert.doesNotMatch(raw,/private-password/);const events=raw.trim().split('\n').map(line=>JSON.parse(line));assert.ok(events.some(e=>e.type==='interaction'&&e.data==='中文提问'));assert.ok(events.findIndex(e=>e.type==='interaction'&&e.data==='中文提问')<events.findIndex(e=>e.type==='output'&&e.data?.includes('ANSWER:')));
