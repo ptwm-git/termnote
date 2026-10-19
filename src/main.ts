@@ -93,7 +93,7 @@ class TerminalSettings extends PluginSettingTab {
     }));
     new Setting(containerEl).setName('工作目录（可选）').setDesc('留空使用当前备份所在的文件夹；也可填写绝对路径。').addText(input=>input.setValue(shell.cwd).onChange(async value=>{shell.cwd=value.trim();await this.save();}));
     this.appearance(data,'terminal');this.appearance(data,'record');
-    containerEl.createEl('p',{text:'拖动右侧栏左边界可调宽度；拖动备份和终端之间的分隔条可调上下比例。每个标签对应独立备份。关闭标签只收起界面；停止请使用结束按钮。'});
+    containerEl.createEl('p',{text:'拖动右侧栏左边界可调宽度；拖动备份和终端之间的分隔条可调上下比例。每个标签对应独立备份。关闭单个标签可选择保存、不保存或取消；收起整个面板仍在后台保存。'});
     containerEl.createEl('p',{text:'记录保存在同目录的 Markdown 及知识库 .agent-note-terminal 日志中，可通过「导出 Markdown」另存到本地。终端可见输出持续备份，不另存密码等不回显按键。'});
   }
   private appearance(data:Settings,area:Area):void {

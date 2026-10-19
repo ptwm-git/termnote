@@ -92,3 +92,18 @@ InputTracker 只在内存管理编辑状态；提交前等待已回显的终端�
 - TUI用户回显作为轮次边界；相同问题从画面底部向前匹配已确认轮次，输入边界之前滚出用户行的历史沿用已知身份，后方相同回答归新轮。终端DA/CPR/OSC等自动响应不进入用户编辑/导航状态；取消保护持续到Ctrl-C回显换行或清屏完成。
 
 - 不能凭“裸竖线边框 + 同文 + 后续有正文”推断输入角色；仅明确提示符/输入框形态排除回显，歧义同文输出优先保留。回显候选可用于轮次匹配，但候选本身不授权删除。
+
+
+## 0.3.2 输入与关闭管理
+
+- view删除Cmd/Ctrl+V手动readText+paste分支，xterm原生paste为唯一入口；保留终端原生括号粘贴与多行规范化。500ms只负责保存，不更改输入路径。
+- naming提供从1查找最小空缺的异步分配函数；Manager串行创建，旧counters保留兼容但不控制编号；每次新建生成独立UUID。
+- 单标签X进入原生CloseModal（取消/不保存/保存并退出）；保存失败不隐藏。显式收起仍保留。整个工作台关闭不改后台语义。
+- RecordData新增generated与discarded可选标识。generated只由创建备份或继续副本时设置，历史sourcePath!=path提供生成依据；不推断未知旧原文可删。
+- Manager串行关闭，关闭中禁止启动；停止后保存或校验绑定并持久化discarded意图，然后调用FileManager.trashFile尊重宿主回收站设置。只在实际移除后清理本ID的jsonl/projection/native文件和索引；失败保留可重试信息。
+- load遇到discarded：文件仍属于原会话时保留并恢复可操作状态；文件已无/同路径属于新会话时只清理旧ID的日志及索引，不删除该路径。被关闭pane中止回放读流、dispose xterm，防止Windows文件句柄占用和资源泄漏。
+- 自动测试覆盖分配/生命周期/故障，真实Obsidian用独立测试文件验证粘贴与Modal按钮；不触及正式库中运行的Agent。独立fresh审查后按既有固定SHA/CI/来源证明/BRAT/社区扫描流程发布0.3.2。
+
+依据：[xterm按键和paste](https://xtermjs.org/docs/api/terminal/classes/terminal/)、[Obsidian trashFile](https://docs.obsidian.md/Reference/TypeScript+API/FileManager/trashFile)。
+
+0.3.2 历史归档保全补充：继续旧增强会话的副本可能与原件共享同一 UUID 日志。不保存仍可移除继续副本，但共享日志与原生归档必须保留，并明确提示；不将历史原件的恢复依据当成本次临时文件删除。共享属性持久化，旧记录按来源绑定迁移，无法核验时优先保留。

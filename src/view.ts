@@ -1,7 +1,7 @@
 import { FuzzySuggestModal,ItemView,Menu,Notice,Setting,Modal,TFile,TFolder,setIcon,MarkdownRenderer,Component,type WorkspaceLeaf } from 'obsidian';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { createReadStream,existsSync } from 'node:fs';
+import { createReadStream,existsSync,type ReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Manager } from './manager';
 import type { Session } from './session';
@@ -13,7 +13,7 @@ import {currentFile} from './context';
 import {exportMarkdown} from './export';
 import { parentPath } from './naming';
 export const VIEW_TYPE='agent-note-terminal-view';
-type Pane={element:HTMLElement;terminal:Terminal;fit:FitAddon;loading:boolean;pending:BridgeEvent[];seq:number};
+type Pane={element:HTMLElement;terminal:Terminal;fit:FitAddon;loading:boolean;pending:BridgeEvent[];seq:number;cancelled:boolean;reader?:ReadStream;readClosed?:Promise<void>};
 export class FolderPicker extends FuzzySuggestModal<TFolder> {
   constructor(app:Manager['app'],private chosen:(folder:TFolder)=>void) {super(app);this.setPlaceholder('选择终端笔记所在文件夹');}
   getItems():TFolder[] {return this.app.vault.getAllFolders(true);}
@@ -37,6 +37,27 @@ class RenameModal extends Modal {
     }));
   }
 }
+class CloseModal extends Modal {
+  constructor(private manager:Manager,private session:Session,private dismissed:()=>void){super(manager.app);}
+  onOpen():void {
+    this.titleEl.setText('是否保存终端笔记？');
+    this.contentEl.createEl('p',{text:this.session.record.path});
+    this.contentEl.createEl('p',{text:'保存并退出会结束终端并保留全部记录；不保存会结束终端，并将自动生成的备份移入回收站。'});
+    if(this.session.record.sharedArchive)this.contentEl.createEl('p',{text:'此继续副本与历史原件共享日志和原生归档。不保存会移除副本，但保留共享的历史归档。'});
+    const error=this.contentEl.createDiv({cls:'ant-error'}),buttons:HTMLButtonElement[]=[];let busy=false;
+    const finish=async(save:boolean)=>{
+      if(busy)return;busy=true;buttons.forEach(button=>button.disabled=true);error.setText('正在结束终端…');
+      try{const warning=await this.manager.closeSession(this.session,save);if(warning)new Notice(warning,10000);this.close();}
+      catch(e){const message=(e as Error).message;error.setText(message);if(!this.contentEl.isConnected)new Notice(message,10000);busy=false;buttons.forEach(button=>button.disabled=false);}
+    };
+    const actions=new Setting(this.contentEl);
+    actions.addButton(button=>{buttons.push(button.buttonEl);button.setButtonText('取消').onClick(()=>this.close());});
+    if(this.manager.canDiscard(this.session))actions.addButton(button=>{buttons.push(button.buttonEl);button.setButtonText('不保存').setDestructive().onClick(()=>finish(false));});
+    else this.contentEl.createEl('p',{text:'此历史文件无法确认是插件自动生成的备份，只提供保留选项；需要删除时请在文件列表中处理。'});
+    actions.addButton(button=>{buttons.push(button.buttonEl);button.setButtonText('保存并退出').setCta().onClick(()=>finish(true));});
+  }
+  onClose():void {this.dismissed();}
+}
 export class TerminalView extends ItemView {
   private activeId='';
   private tabs!:HTMLElement;private toolbar!:HTMLElement;private stages!:HTMLElement;
@@ -46,6 +67,7 @@ export class TerminalView extends ItemView {
   private split!:HTMLElement;private divider!:HTMLElement;private terminalTitle!:HTMLElement;private recordTitle!:HTMLElement;
   private appearanceKey='';private dragId:number|null=null;
   private previewComponent?:Component;private previewGeneration=0;
+  private closeModals=new Map<string,CloseModal>();
   constructor(leaf:WorkspaceLeaf,readonly manager:Manager) {super(leaf);}
   getViewType():string {return VIEW_TYPE;}
   getDisplayText():string {return '终端笔记';}
@@ -84,6 +106,7 @@ export class TerminalView extends ItemView {
       this.render();
     };
     this.manager.listeners.add(listener);this.register(()=>this.manager.listeners.delete(listener));
+    const close=(id:string)=>this.disposePane(id);this.manager.beforeClose.add(close);this.register(()=>this.manager.beforeClose.delete(close));
     this.observer=new ResizeObserver(()=>this.fitActive());this.observer.observe(this.stages);
     this.render();
   }
@@ -127,7 +150,7 @@ export class TerminalView extends ItemView {
   }
   private current():Session|undefined {return this.manager.sessions.get(this.activeId);}
   private apply(pane:Pane,event:BridgeEvent):void {
-    if(event.seq<=pane.seq)return;
+    if(pane.cancelled||event.seq<=pane.seq)return;
     pane.seq=event.seq;
     if(event.type==='output' && event.data) pane.terminal.write(event.data);
     if((event.type==='resize'||event.type==='start') && event.cols && event.rows) pane.terminal.resize(event.cols,event.rows);
@@ -138,20 +161,21 @@ export class TerminalView extends ItemView {
     const style=getComputedStyle(this.stages);
     const terminal=new Terminal({fontSize:this.manager.data.settings.fontSize,fontFamily:getComputedStyle(this.contentEl).getPropertyValue('--font-monospace').trim()||'monospace',cursorBlink:true,scrollback:10000,allowProposedApi:true,theme:{background:style.backgroundColor,foreground:style.color,cursor:style.color}});
     const fit=new FitAddon();terminal.loadAddon(fit);terminal.open(element);
-    const pane:Pane={element,terminal,fit,loading:true,pending:[],seq:0};this.panes.set(session.record.id,pane);
-    terminal.onData(data=>{if(!pane.loading)session.write(data);});
-    terminal.onBinary(data=>{if(!pane.loading)session.write(data);});
+    const pane:Pane={element,terminal,fit,loading:true,pending:[],seq:0,cancelled:false};this.panes.set(session.record.id,pane);
+    terminal.onData(data=>{if(!pane.loading&&!pane.cancelled&&!this.manager.isClosing(session))session.write(data);});
+    terminal.onBinary(data=>{if(!pane.loading&&!pane.cancelled&&!this.manager.isClosing(session))session.write(data);});
     terminal.attachCustomKeyEventHandler(event=>{
       const modifier=process.platform==='darwin'?event.metaKey:event.ctrlKey;
       if(event.type==='keydown' && modifier && event.key.toLowerCase()==='c' && terminal.hasSelection()) {this.run(navigator.clipboard.writeText(terminal.getSelection()));return false;}
-      if(event.type==='keydown' && modifier && event.key.toLowerCase()==='v') {this.run(navigator.clipboard.readText().then(text=>terminal.paste(text)));return false;}
+      // xterm handles the native paste event, including bracketed paste, exactly once.
       return true;
     });
     try {
       if(existsSync(session.journal)) {
         const input=createReadStream(session.journal,{encoding:'utf8'}),lines=createInterface({input,crlfDelay:Infinity});
+        pane.reader=input;pane.readClosed=new Promise(resolve=>input.once('close',resolve));
         try {for await(const line of lines) {
-          if(this.disposed)break;
+          if(this.disposed||pane.cancelled)break;
           let event:BridgeEvent;try {event=JSON.parse(line);}catch{break;}
           if(event.seq<=pane.seq)continue;
           pane.seq=event.seq;
@@ -159,10 +183,19 @@ export class TerminalView extends ItemView {
           else if((event.type==='resize'||event.type==='start') && event.cols && event.rows)terminal.resize(event.cols,event.rows);
         }} finally {lines.close();input.destroy();}
       }
+      if(pane.cancelled)return;
       for(const event of pane.pending) this.apply(pane,event);
       await new Promise<void>(resolve=>terminal.write('',resolve));
-    } catch(error) {new Notice('终端历史显示失败：'+(error as Error).message);}
-    finally {pane.pending=[];pane.loading=false;if(!this.disposed)this.fitActive();}
+    } catch(error) {if(!pane.cancelled)new Notice('终端历史显示失败：'+(error as Error).message);}
+    finally {pane.pending=[];pane.loading=false;if(!this.disposed&&!pane.cancelled)this.fitActive();}
+  }
+  private async disposePane(id:string):Promise<void>{
+    const pane=this.panes.get(id);if(!pane)return;pane.cancelled=true;pane.reader?.destroy();await pane.readClosed;
+    pane.terminal.dispose();pane.element.remove();if(this.panes.get(id)===pane)this.panes.delete(id);
+  }
+  private requestClose(session:Session):void{
+    if(this.closeModals.has(session.record.id)||this.manager.isClosing(session))return;
+    const modal=new CloseModal(this.manager,session,()=>this.closeModals.delete(session.record.id));this.closeModals.set(session.record.id,modal);modal.open();
   }
   private fitActive():void {
     const session=this.current(),pane=session&&this.panes.get(session.record.id);
@@ -175,7 +208,7 @@ export class TerminalView extends ItemView {
     menu.addItem(item=>item.setTitle('打开对应笔记').setIcon('file-text').onClick(()=>this.openNote(session)));
     menu.addSeparator();
     menu.addItem(item=>item.setTitle('收起标签（后台继续保存）').setIcon('minus').onClick(()=>this.manager.hide(session)));
-    menu.addItem(item=>item.setTitle('结束并关闭（保留笔记）').setIcon('square').onClick(()=>this.run(session.stop().then(()=>this.manager.hide(session)))));
+    menu.addItem(item=>item.setTitle('关闭标签…').setIcon('x').onClick(()=>this.requestClose(session)));
     menu.showAtMouseEvent(event);
   }
   private openNote(session:Session):void {
@@ -201,7 +234,7 @@ export class TerminalView extends ItemView {
       const tab=this.tabs.createDiv({cls:'ant-tab'+(this.activeId===record.id?' is-active':''),attr:{role:'tab','aria-selected':String(this.activeId===record.id),tabindex:'0',title:record.path}});
       tab.createSpan({text:record.path.split('/').pop()!.replace(/\.md$/,''),cls:'ant-tab-label'});
       tab.createSpan({cls:'ant-dot'+(session.live?' is-running':'')+(session.saveError?' is-error':''),attr:{title:session.saveError||STATE_LABEL[record.state]}});
-      const close=this.button(tab,'x','收起标签，后台继续运行并保存',()=>this.manager.hide(session));close.addEventListener('click',e=>e.stopPropagation());
+      const close=this.button(tab,'x','关闭标签：选择保存或不保存',()=>this.requestClose(session));close.addEventListener('click',e=>e.stopPropagation());
       tab.addEventListener('click',()=>{this.activeId=record.id;this.render();this.panes.get(record.id)?.terminal.focus();this.app.workspace.requestSaveLayout();});
       tab.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();this.select(session);}});
       tab.addEventListener('contextmenu',e=>{e.preventDefault();this.menu(session,e);});
@@ -212,7 +245,8 @@ export class TerminalView extends ItemView {
     for(const [id,pane] of this.panes) pane.element.toggleClass('ant-hidden',id!==this.activeId);
     const session=this.current();
     this.recordTitle.setText(!session||session.record.transcriptVersion===2?'增量对话 · 自动保存':'历史记录 · 原文保留');
-    if(session&&!this.panes.has(session.record.id))this.run(this.createPane(session));
+    if(session&&!this.manager.isClosing(session)&&!this.panes.has(session.record.id))this.run(this.createPane(session));
+    for(const id of this.panes.keys())if(!this.manager.sessions.has(id))this.run(this.disposePane(id));
     for(const [id,pane]of this.panes)pane.element.toggleClass('ant-hidden',id!==this.activeId);
     this.terminalTitle.setText(session?.record.native?'历史终端（主动恢复后继续）':'系统终端 · 直接输入本机 CLI 命令');
     const key=[this.activeId,session?.record.state,session?.record.path,session?.saveError,session?.record.native?.sessionID].join('|');
@@ -262,13 +296,13 @@ export class TerminalView extends ItemView {
       if(session.record.transcriptVersion!==2)menu.addItem(item=>item.setTitle('生成精简记录副本').setIcon('file-plus').onClick(()=>this.run(this.manager.compactCopy(session).then(file=>this.app.workspace.getLeaf('tab').openFile(file)))));
       if(session.record.native){
         if(!session.live)menu.addItem(item=>item.setTitle('继续历史 OpenCode 会话').setIcon('play').onClick(()=>this.run(this.manager.launch(session))));
-        menu.addItem(item=>item.setTitle('补齐历史原生记录').setIcon('download').onClick(()=>this.run(session.refreshNative())));
+        menu.addItem(item=>item.setTitle('补齐历史原生记录').setIcon('download').onClick(()=>this.run(this.manager.refreshNative(session))));
       }
       if(session.saveError)menu.addItem(item=>item.setTitle('备份当前文件并恢复同步').setIcon('refresh-cw').onClick(()=>this.run(this.manager.repair(session))));
       menu.showAtPosition({x:more.getBoundingClientRect().left,y:more.getBoundingClientRect().bottom});
     });
   }
   async onClose():Promise<void> {
-    this.disposed=true;this.previewComponent?.unload();this.observer?.disconnect();for(const pane of this.panes.values())pane.terminal.dispose();this.panes.clear();
+    this.disposed=true;this.previewComponent?.unload();this.observer?.disconnect();for(const modal of this.closeModals.values())modal.close();await Promise.all([...this.panes.keys()].map(id=>this.disposePane(id)));
   }
 }

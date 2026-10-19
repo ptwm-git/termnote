@@ -1,9 +1,9 @@
 import { FileSystemAdapter,Notice,TFile,TFolder,type TAbstractFile,type App } from 'obsidian';
 import { randomUUID } from 'node:crypto';
 import { join,resolve } from 'node:path';
-import { mkdir,writeFile } from 'node:fs/promises';
+import { mkdir,writeFile,unlink } from 'node:fs/promises';
 import { binding,detachCopiedBinding,markers,region } from './note';
-import { fileName,parentPath,pathFor,validateName } from './naming';
+import { fileName,firstAvailableName,parentPath,pathFor,validateName } from './naming';
 import type { BridgeEvent,PluginData,Profile,RecordData } from './types';
 import { Session } from './session';
 import { NoteWriter } from './writer';
@@ -15,6 +15,7 @@ import {SYSTEM_PROFILE_ID} from './types';
 export class Manager {
   readonly sessions=new Map<string,Session>();
   readonly listeners=new Set<(session?:Session,event?:BridgeEvent)=>void>();
+  readonly beforeClose=new Set<(id:string)=>Promise<void>>();
   readonly notes:ObsidianNotes;
   readonly base:string; readonly bridge:string;
   private operation:Promise<unknown>=Promise.resolve();
@@ -22,6 +23,7 @@ export class Manager {
   private saveTimer?:ReturnType<typeof setTimeout>;
   private interval?:ReturnType<typeof setInterval>;
   private pythonPromise?:Promise<PythonCommand>;
+  private closingRecords=new Set<string>();
   closed=false;
   constructor(readonly app:App,readonly data:PluginData,pluginDir:string,private saveData:()=>Promise<void>) {
     if(!(app.vault.adapter instanceof FileSystemAdapter)) throw new Error('终端需要本地文件夹知识库');
@@ -53,9 +55,24 @@ export class Manager {
   async load():Promise<void> {
     await mkdir(join(this.base,'.agent-note-terminal'),{recursive:true,mode:0o700});
     const ids=new Set<string>();
+    const removed=new Set<string>();
     for(const record of this.data.records) {
       if(!/^[0-9a-f-]{36}$/.test(record.id) || ids.has(record.id)) continue;
       ids.add(record.id);
+      if(record.sourcePath&&record.sourcePath!==record.path&&await this.app.vault.adapter.exists(record.sourcePath)){
+        try{if(binding(await this.notes.read(record.sourcePath))===record.id)record.sharedArchive=true;}
+        catch{record.sharedArchive=true;}
+      }
+      if(record.discarded){
+        const file=this.app.vault.getFileByPath(record.path);
+        let same=false;
+        try{if(!file&&await this.app.vault.adapter.exists(record.path))throw new Error('文件尚未载入，无法核验');same=!!file&&binding(await this.notes.read(record.path))===record.id;}
+        catch(error){const session=this.make(record);record.state='failed';record.visible=true;session.historyError=session.saveError='上次丢弃状态无法核验，已保留全部文件：'+(error as Error).message;continue;}
+        if(!same){
+          const pending=await this.cleanupRecord(record);if(!pending.length)removed.add(record.id);else new Notice('上次丢弃的日志仍待清理：'+pending.join('、'));continue;
+        }
+        record.discarded=undefined;record.visible=true;new Notice('上次删除未完成，已保留备份：'+record.path);
+      }
       const session=this.make(record);
       if(!(this.app.vault.getAbstractFileByPath(record.path) instanceof TFile)) {record.state='missing';record.visible=false;continue;}
       try {
@@ -66,11 +83,12 @@ export class Manager {
       }
       catch(error) {record.state='failed';session.saveError=(error as Error).message;}
     }
+    this.data.records=this.data.records.filter(record=>!removed.has(record.id));
     this.interval=setInterval(()=>{for(const session of this.sessions.values()) if(!session.saveError)void session.flush();},500);
     this.changed();
   }
   async attach(file:TFile):Promise<Session> {return this.serial(()=>this.attachInternal(file));}
-  private async attachInternal(file:TFile,sourcePath?:string):Promise<Session> {
+  private async attachInternal(file:TFile,sourcePath?:string,generated=false):Promise<Session> {
     if(file.extension!=='md') throw new Error('请选择 Markdown 笔记');
     const existing=[...this.sessions.values()].find(s=>s.record.path===file.path && s.record.state!=='missing');
     if(existing) {existing.record.visible=true;this.changed();return existing;}
@@ -83,7 +101,7 @@ export class Manager {
       else id=oldId as `${string}-${string}-${string}-${string}-${string}`;
     }
     const profile=SYSTEM_PROFILE_ID;
-    const record:RecordData={id,transcriptVersion:2,path:file.path,...(sourcePath?{sourcePath}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
+    const record:RecordData={id,transcriptVersion:2,path:file.path,...(sourcePath?{sourcePath}:{}),...(generated?{generated:true as const}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
     const session=this.make(record);this.data.records.push(record);
     if(oldId===id) await session.restore();else await session.initialize();
     await session.flush();await this.persist();this.changed();return session;
@@ -98,17 +116,21 @@ export class Manager {
   newNote(folder:string,sourcePath?:string):Promise<Session> {return this.serial(()=>this.newNoteInternal(folder,sourcePath));}
   private async newNoteInternal(folder:string,sourcePath?:string):Promise<Session> {
     if(folder && !this.app.vault.getFolderByPath(folder)) throw new Error('目标文件夹不存在');
-    let n=this.data.counters[folder]??0;
-    let path:string;
-    do {n++;path=pathFor(folder,fileName(n));} while(await this.app.vault.adapter.exists(path));
-    this.data.counters[folder]=n;await this.persist();
+    const {number:n,path}=await firstAvailableName(folder,path=>this.app.vault.adapter.exists(path));
+    this.data.counters[folder]=Math.max(this.data.counters[folder]??0,n);await this.persist();
     const source=sourcePath?this.app.vault.getAbstractFileByPath(sourcePath):null;
     const origin=source instanceof TFile?'\n来源：'+this.app.fileManager.generateMarkdownLink(source,path)+'\n':'';
     const file=await this.app.vault.create(path,`# ${fileName(n).slice(0,-3)}\n${origin}`);
-    return this.attachInternal(file,sourcePath);
+    return this.attachInternal(file,sourcePath,true);
   }
   async launch(session:Session,profileId?:string):Promise<void> {
     if(this.closed)throw new Error('插件正在关闭');
+    if(this.isClosing(session))throw new Error('会话正在关闭，请等待完成');
+    return this.serial(()=>this.launchInternal(session,profileId));
+  }
+  private async launchInternal(session:Session,profileId?:string):Promise<void>{
+    if(this.sessions.get(session.record.id)!==session)throw new Error('此会话已关闭');
+    if(this.isClosing(session))throw new Error('会话正在关闭，请等待完成');
     if(session.live) return;
     if(session.saveError) {new Notice('请先恢复笔记同步：'+session.saveError);return;}
     if(profileId&&session.record.launch&&profileId!==session.record.launch.id)throw new Error('更换 Agent 请创建新笔记，已有会话保留原配置');
@@ -124,7 +146,7 @@ export class Manager {
     if(session.legacyFrozen&&(session.record.native||session.record.state==='failed'&&session.seq<=1)){
       const original=session.record.path,folder=parentPath(original),name=original.split('/').pop()!.replace(/\.md$/,'')+'（继续）';let path=pathFor(folder,name+'.md'),n=1;
       while(await this.app.vault.adapter.exists(path))path=pathFor(folder,name+' '+(++n)+'.md');
-      await this.app.vault.create(path,await this.notes.read(original));session.record.path=path;session.record.sourcePath=original;session.writer.path=path;session.legacyFrozen=false;await this.persist();
+      await this.app.vault.create(path,await this.notes.read(original));session.record.path=path;session.record.sourcePath=original;session.record.generated=true;session.record.sharedArchive=true;session.writer.path=path;session.legacyFrozen=false;await this.persist();
     }
     await session.start(profile,cwd);await this.persist();this.changed();
   }
@@ -170,6 +192,14 @@ export class Manager {
     if(session.historyError||session.saveError||session.record.journalError)throw new Error('请先恢复记录同步再导出：'+(session.historyError||session.saveError||session.record.journalError));
     return this.notes.read(session.record.path);
   }
+  async refreshNative(session:Session):Promise<void>{
+    if(this.isClosing(session))throw new Error('会话正在关闭，请等待完成');
+    return this.serial(async()=>{
+      if(this.sessions.get(session.record.id)!==session)throw new Error('此会话已关闭');
+      if(this.isClosing(session))throw new Error('会话正在关闭，请等待完成');
+      await session.refreshNative();
+    });
+  }
   async deleted(path:string):Promise<void> {
     for(const session of this.sessions.values()) {
       const source=session.record.sourcePath;
@@ -197,6 +227,52 @@ export class Manager {
     session.writer.reset();session.saveError='';session.revision++;await session.flush();await this.persist();this.changed();
   }
   hide(session:Session):void {session.record.visible=false;this.changed();}
+  isClosing(session:Session):boolean{return this.closingRecords.has(session.record.id);}
+  canDiscard(session:Session):boolean{return session.record.generated===true||!!session.record.sourcePath&&session.record.sourcePath!==session.record.path;}
+  private cleanupRecord(record:RecordData):Promise<string[]>{return record.sharedArchive?Promise.resolve([]):this.cleanupOwned(record.id);}
+  private async cleanupOwned(id:string):Promise<string[]>{
+    if(!/^[0-9a-f-]{36}$/u.test(id))throw new Error('会话标识无效，拒绝清理日志');
+    const pending:string[]=[];
+    for(const suffix of ['.jsonl','.projection.json','.opencode.json']){
+      const name=id+suffix;try{await unlink(join(this.base,'.agent-note-terminal',name));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')pending.push(name);}
+    }
+    return pending;
+  }
+  closeSession(session:Session,save:boolean):Promise<string|undefined>{
+    if(this.isClosing(session))return Promise.reject(new Error('会话正在关闭，请等待完成'));
+    this.closingRecords.add(session.record.id);
+    return this.serial(async()=>{
+    const record=session.record,id=record.id;
+    if(this.sessions.get(id)!==session)throw new Error('此会话已关闭');
+    if(!save&&!this.canDiscard(session))throw new Error('此文件不是可确认的自动生成备份，请在文件列表中自行处理');
+      await session.stop();
+      if(save&&(session.saveError||session.historyError||record.journalError||session.nativeError))throw new Error('记录尚未完整保存：'+(session.saveError||session.historyError||record.journalError||session.nativeError));
+      let file:TFile|null=null;
+      if(!save){
+        file=this.app.vault.getFileByPath(record.path);
+        if(!file&&await this.app.vault.adapter.exists(record.path))throw new Error('文件尚未载入，无法核验归属；已保留文件');
+        if(file&&binding(await this.notes.read(record.path))!==id)throw new Error('该路径已不是本会话的备份，已保留文件');
+      }
+      await Promise.all([...this.beforeClose].map(close=>close(id)));
+      const visible=record.visible;
+      if(save){
+        record.visible=false;try{await this.persist();}catch(error){record.visible=visible;throw error;}this.changed();return;
+      }
+      record.discarded=true;record.visible=false;
+      try{await this.persist();}catch(error){record.discarded=undefined;record.visible=visible;throw error;}
+      try{
+        if(file){
+          if(this.app.vault.getFileByPath(record.path)!==file||binding(await this.notes.read(record.path))!==id)throw new Error('备份文件已变化，已取消删除');
+          await this.app.fileManager.trashFile(file);
+        }
+      }catch(error){record.discarded=undefined;record.visible=visible;await this.persist().catch(()=>{});throw error;}
+      record.state='missing';this.sessions.delete(id);session.dispose();this.changed();
+      const pending=await this.cleanupRecord(record);
+      if(!pending.length)this.data.records=this.data.records.filter(item=>item!==record);
+      try{await this.persist();}catch{return '备份已移入回收站；索引同步失败，重载后会继续清理本会话残留';}
+      return pending.length?'备份已移入回收站；部分日志仍待清理，重载后重试：'+pending.join('、'):record.sharedArchive?'继续副本已移入回收站；与历史原件共享的日志和原生归档已保留':undefined;
+    }).finally(()=>{this.closingRecords.delete(session.record.id);this.changed();});
+  }
   show(session:Session):void {session.record.visible=true;this.changed();}
   reorder(id:string,before:string):void {
     const records=this.data.records;

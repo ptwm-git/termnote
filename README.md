@@ -5,7 +5,7 @@ TermNote is a desktop Obsidian plugin with a terminal in the right sidebar: a co
 ## Features
 
 - Start a system shell and type any installed CLI, including OpenCode, Claude Code or Codex. No agent is selected or required by default.
-- Use independent terminal tabs. Backups are created beside the current document with incrementally numbered names; you can rename them.
+- Use independent terminal tabs. Backups are created beside the current document with numbered names that fill the smallest available gap; you can rename them.
 - Resize the native sidebar horizontally and drag the internal divider to adjust the record/terminal heights.
 - Configure each area's font size, background and text color independently. Presets include black, gray, light and the Obsidian theme.
 - Save an incremental conversation: submitted visible input as **我** (me), output as **终端** (terminal), and menu confirmations as **操作** (action). Streaming text updates its current block; screen repainting does not append whole-screen snapshots.
@@ -18,7 +18,7 @@ Requires **Obsidian 1.14.4+ on macOS or Windows** and **Python 3.9+**. Windows a
 
 Install **TermNote** from its [Obsidian Community page](https://community.obsidian.md/plugins/agent-note-terminal), use [BRAT](https://github.com/TfTHacker/obsidian42-brat) with `ptwm-git/termnote`, or extract the ZIP from [GitHub Releases](https://github.com/ptwm-git/termnote/releases/latest) into your vault's `.obsidian/plugins/`. Enable **TermNote** and check the Python environment in its settings. Only the standard `main.js`, `manifest.json` and `styles.css` runtime files are required; the Python bridge is embedded.
 
-Open a document and click the terminal ribbon icon, or run **TermNote: 在当前文件右侧打开终端**. A new backup is created in the same folder. Type commands in the lower terminal; the upper record saves automatically. **+** starts another independent terminal and backup. **×** hides a tab while its process continues; use the square stop button to end the process. Use the history button to reopen saved records, and the save button to export Markdown.
+Open a document and click the terminal ribbon icon, or run **TermNote: 在当前文件右侧打开终端**. A new backup is created in the same folder. Type commands in the lower terminal; the upper record saves automatically. **+** starts another independent terminal and backup. **×** asks whether to save and stop, discard and stop, or cancel. Discard moves the generated backup to the configured trash and removes its session logs. Archives shared with an older original are retained. The tab menu also offers **收起标签（后台继续保存）** to keep working in the background; closing the whole sidebar keeps saving. Use the history button to reopen saved records, and the save button to export Markdown.
 
 The interface currently uses Chinese labels. [Release status](docs/RELEASE.md) and [validation](docs/VALIDATION.md) report actual review and platform coverage. macOS Obsidian is tested; Windows ConPTY and CLI protocol tests run in CI. The Windows Obsidian graphical interface still needs manual testing.
 
@@ -68,9 +68,10 @@ codex
 
 - 「＋」创建新的独立系统终端和备份。优先使用中央当前文件所在目录；没有文件时沿用当前终端目录，或选择文件夹。
 - 同一来源文件再次调用时，会显示其仍运行的会话；会话结束后再次调用则创建新的备份。打开已有备份文件会显示其历史，避免覆盖旧对话。
-- 默认按目录递增命名“终端页面一 / 二 / 三…”，自动跳过重名；改名、删除或重启不会回退已经分配的序号，文件夹移动也会迁移序号。
+- 默认按目录查找最小空缺序号“终端页面一 / 二 / 三…”。删除二、三后再次新建会先补二、再补三；重命名释放的默认名也可复用，已有文件不会覆盖，新文件使用新的会话 ID。
 - 标签可拖动排序；工具栏或标签右键可重命名真实备份文件。文件列表中的重命名和移动也会同步。
-- 「×」只收起，其他标签和后台保存继续运行。停止请点击方形结束按钮；历史入口可重新显示记录。
+- 「×」弹出「保存并退出 / 不保存 / 取消」。保存会结束进程并保留完整记录；不保存会结束进程，将插件生成的备份按 Obsidian 回收站设置移出原目录，并清理该会话日志（旧继续副本与原件共享的历史归档保留）；取消保持会话不变。来源原文和其他会话不受影响。无法确认来源的历史文件仅提供保留选项。
+- 标签右键「收起标签（后台继续保存）」或关闭整个右侧面板可继续后台运行；方形结束按钮只停止并保存，不关闭标签。历史入口可重新打开已保留记录。
 - 「在中央打开备份笔记」可正常编辑和查阅 Markdown；「导出 Markdown 到本地」通过系统另存对话框选择保存位置；取消不写文件。复制按钮复制已保存的完整备份。
 - 正常退出 Obsidian 会结束程序；再次打开恢复文字和标签，不自动执行历史命令。新的对话用「＋」。
 

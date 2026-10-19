@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.3.2 粘贴与退出管理 — 2026-10-19
+
+- 本机 macOS / Apple Silicon、Obsidian 1.14.4、Python 3.14.6。新增13项真实 Manager/Session/NoteWriter 结合模拟Obsidian文件API的生命周期用例；本机74项Node +7项Python、类型检查及构建通过，官方ESLint 0 Error / 101 Warning。保存尾部等待、关闭中拒绝启动、旧原文/替换文件保护、索引/回收站/日志清理失败，以及中断删除的安全重载均覆盖。
+- 实际独立test-vault中，0.3.1同一次DOM Cmd+V及系统paste事件得到两份输入，0.3.2得到一份；英文、中文和多行含括号粘贴各一份，等待650ms不增加，没有额外Enter。不读取用户剪贴板，测试仅使用内存fixture。
+- 实际标签X打开原生Modal：取消与Esc保留进程/文件；保存并退出停止进程并保留尾行；不保存删除二/三的生成备份及各自日志，来源原文和一保持一致；新建依次补二/三，使用全新UUID。关闭整个工作台后真实Shell仍接收命令并落盘，重开预览可读；全部测试进程已停止。
+- 原54个记录ID及52份现存笔记逐字节哈希保留。所有实际变更由准确basePath保护，未改动正式Documents知识库的运行会话。脚本 scripts/obsidian-v032.mjs 可在独立测试库复验。
+- 独立审查发现的旧继续会话启动/关闭竞态、原生同步失败误关闭、关闭中原生补齐竞态、共享历史归档删除和已关闭Modal错误不可见均已修复，补充回归测试。最新真实脚本再次通过，原70个ID/68份笔记保留。fresh最终复核PASS（全部检查及3项独立故障/并发探针），两平台CI、发行附件/来源证明、BRAT升级与社区扫描尚待完成；Windows Obsidian图形界面及真实Windows剪贴板未实测，不能以Node/ConPTY CI代替。
+
 ## 0.3.1 增量对话 — 2026-10-19
 
 - 本机 macOS / Apple Silicon、Obsidian 1.14.4、Python 3.14.6。61 项 Node + 7 项 Python、严格类型检查及构建通过，官方 ESLint 0 Error / 101 Warning。

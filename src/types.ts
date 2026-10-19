@@ -10,7 +10,7 @@ export type RunState = 'idle' | 'starting' | 'running' | 'ended' | 'interrupted'
 export interface RecordData {
   id: string; path: string; sourcePath?: string; visible: boolean; profile: string; created: string;
   state: RunState; cwd: string; executable: string; args: string[]; lastHash?: string; journalError?: string;
-  launch?:Profile; native?:NativeBinding; transcriptVersion?:2;
+  launch?:Profile; native?:NativeBinding; transcriptVersion?:2; generated?:true; discarded?:true; sharedArchive?:true;
 }
 export interface PluginData { settings: Settings; records: RecordData[]; counters: Record<string, number>; }
 export interface BridgeEvent { type: 'start'|'output'|'resize'|'exit'|'error'|'interaction'; action?:'edit'|'submit'|'cancel'; inputLines?:number; inputKind?:'input'|'operation'; echo?:string; seq: number; time: string; data?: string; bytes?: string; cols?: number; rows?: number; code?: number; message?: string; }

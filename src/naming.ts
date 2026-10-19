@@ -18,4 +18,9 @@ export function validateName(input: string): string {
   return name+'.md';
 }
 export function pathFor(folder: string,name: string): string { return folder ? folder+'/'+name : name; }
+export async function firstAvailableName(folder:string,exists:(path:string)=>Promise<boolean>):Promise<{number:number;path:string}>{
+  let number=1,path=pathFor(folder,fileName(number));
+  while(await exists(path)){number++;path=pathFor(folder,fileName(number));}
+  return {number,path};
+}
 export function parentPath(path: string): string { return path.includes('/') ? path.slice(0,path.lastIndexOf('/')) : ''; }
