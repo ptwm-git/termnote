@@ -20,6 +20,7 @@ export class Transcript {
   private synchronized=false;
   private turns:string[][]=[];private plainTurn=0;private cancelling=false;private cancelEcho='';
   private pendingEdit=false;private echoIndices=new Set<number>();
+  private confirmedEchoes=new Set<string>();
   constructor(cols=100,rows=30){
     this.terminal=new Terminal({cols,rows,scrollback:10000,allowProposedApi:true});
     this.terminal.onScroll(()=>{
@@ -81,7 +82,7 @@ export class Transcript {
     this.echoIndices=new Set<number>();const boundaryCandidates=new Set<number>();
     // ConPTY can redraw an ordinary prompt using cursor addressing. Only an
     // exact submitted line with its non-empty prompt prefix counts as this echo.
-    if(clean(this.inputPrefix)&&this.submitted){const index=rows.findIndex(row=>compact(row.text)===compact(clean(this.inputPrefix+this.submitted))||this.echo&&compact(row.text)===compact(clean(this.echo)));if(index>=0)this.echoIndices.add(index);}
+    for(const text of this.confirmedEchoes){const index=rows.findIndex(row=>compact(row.text)===text);if(index>=0)this.echoIndices.add(index);}
     for(const text of this.confirmedInputs){
       const positions=rows.flatMap((row,index)=>compact(row.text)===text&&/^\s*(?:[│┃]|[❯›>])/u.test(row.raw)?[index]:[]),budget=this.turns.filter(parts=>parts.includes(text)).length;
       for(let n=0;n<Math.min(budget,positions.length);n++){
@@ -152,6 +153,7 @@ export class Transcript {
     if(event.action==='cancel'){this.cancelling=this.editing;this.cancelEcho=this.cursorLine();this.inputLines=1;this.seal();return;}
     if(event.action==='submit'){
       this.capture();this.echo=event.echo??'';this.submitted=event.data??'';this.editing=false;this.seal();
+      if(event.data&&event.inputKind!=='operation'&&clean(this.inputPrefix))for(const text of [this.inputPrefix+event.data,event.echo??''])if(text.trim())this.confirmedEchoes.add(compact(clean(text)));
       this.inputLines=1;this.awaitingAnswer=true;this.roundCleared=false;if(event.data&&event.inputKind!=='operation')for(const text of [event.data,...event.data.split('\n')])if(text.trim())this.confirmedInputs.add(compact(text));
       if(event.data&&event.inputKind!=='operation')this.turns.push([event.data,...event.data.split('\n')].filter(text=>text.trim()).map(compact));
       if(event.data)this.blocks.push({kind:event.inputKind==='operation'?'operation':'input',lines:[{text:event.data,sealed:true}]});

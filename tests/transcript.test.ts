@@ -100,3 +100,6 @@ test('同文边框输入和回答保留回答，单独模糊边框行保守保�
 test('ConPTY以光标重绘普通提示符时不重复归档输入',async()=>{
  const t=new Transcript(60,8);try{await t.feed('READY> ');await submit(t,'中文提问');await t.feed('\x1b[1;1HREADY> 中文提问\r\nANSWER:中文提问\r\n');const text=await t.render();assert.equal(count(text,'中文提问'),2,text);assert.match(text,/ANSWER:中文提问/);}finally{t.dispose();}
 });
+test('ConPTY在下一次隐藏输入后重绘历史仍排除已确认回显',async()=>{
+ const t=new Transcript(60,8);try{await t.feed('READY> ');await submit(t,'中文提问');await t.feed('\x1b[1;1HREADY> 中文提问\r\nANSWER:中文提问\r\nPassword: ');await t.interaction(event('edit'));await t.interaction(event('submit',undefined,'Password: '));await t.feed('\x1b[1;1HREADY> 中文提问\r\nANSWER:中文提问\r\nPassword: \r\nFINISHED\r\n');const text=await t.render();assert.equal(count(text,'中文提问'),2,text);assert.match(text,/FINISHED/);}finally{t.dispose();}
+});
