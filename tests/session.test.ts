@@ -87,3 +87,27 @@ test('日志恢复处理未完成末尾，笔记投影可重建',async()=>{
   try {await session.restore();await session.flush();assert.equal(record.state,'interrupted');assert.match(text,/已落盘内容/);const previous=text;await session.flush();assert.equal(text,previous);assert.match(session.error,/末尾/);}
   finally{session.dispose();await rm(dir,{recursive:true,force:true});}
 });
+
+test('真实系统 Shell 可交互运行 CLI，中文结果退出后持续保留',{timeout:30000},async()=>{
+  const {defaultShell}=await import('../src/settings');
+  const shell=defaultShell(process.platform,process.env),folder=await mkdtemp(join(tmpdir(),'termnote-shell-'));
+  const token='中文_'+randomUUID().slice(0,8),id=randomUUID();let text='# Shell 备份\n';
+  const record:RecordData={id,path:'Shell.md',visible:true,profile:'shell',created:'now',state:'idle',cwd:'',executable:'',args:[]};
+  const host={bridge:resolve('bridge.py'),python:async()=>({executable:process.platform==='win32'?'python':'python3',prefix:[],description:'test'}),changed:()=>{}};
+  const session=new Session(record,join(folder,'events.jsonl'),new NoteWriter({read:async()=>text,update:async(_p,fn)=>{text=fn(text);}},id,'Shell.md'),host);
+  const args=process.platform==='win32'?['-NoProfile',...shell.args]:/zsh$/.test(shell.executable)?['-f',...shell.args]:/bash$/.test(shell.executable)?['--noprofile','--norc']:shell.args;
+  const quote=(value:string)=>process.platform==='win32'?"'"+value.replaceAll("'","''")+"'":"'"+value.replaceAll("'","'\\''")+"'";
+  try{
+    await session.start({id:'shell',name:'系统终端',...shell,args,cwd:folder},folder);
+    const ready=Date.now()+10000;while(record.state==='starting'&&Date.now()<ready)await new Promise(r=>setTimeout(r,20));
+    assert.equal(record.state,'running');
+    const runner=join(folder,'agent.cjs');
+    await writeFile(runner,`process.stdout.write('CLI_' + ${JSON.stringify(token)} + '\\n')`,'utf8');
+    session.write((process.platform==='win32'?'& ':'')+quote(process.execPath)+' '+quote(runner)+'\r');
+    const until=Date.now()+15000;while(!text.includes('CLI_'+token)&&Date.now()<until){await session.flush();await new Promise(r=>setTimeout(r,30));}
+    assert.ok(text.includes('CLI_'+token),text);
+    session.write('exit\r');
+    const end=Date.now()+10000;while(session.live&&Date.now()<end)await new Promise(r=>setTimeout(r,25));
+    await session.stop();assert.equal(record.state,'ended');assert.equal(session.saveError,'');assert.ok(text.includes('CLI_'+token));
+  }finally{await session.stop();session.dispose();await rm(folder,{recursive:true,force:true});}
+});

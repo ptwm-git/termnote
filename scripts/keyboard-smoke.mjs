@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process';
 function run(command,...args){
-  const result=spawnSync('obsidian',['vault=test-vault',command,...args],{encoding:'utf8',timeout:20000});
+  const result=spawnSync('obsidian',[command,'vault=test-vault',...args],{encoding:'utf8',timeout:20000});
   if(result.status!==0 || /^Error:/m.test(result.stdout))throw new Error(result.stdout+result.stderr);
   process.stdout.write(result.stdout);return result.stdout;
 }

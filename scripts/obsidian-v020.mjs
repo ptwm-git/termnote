@@ -2,7 +2,7 @@
 import{createServer}from'node:http';import{mkdtemp,writeFile,chmod}from'node:fs/promises';
 import{tmpdir,homedir}from'node:os';import{join}from'node:path';import{execFile}from'node:child_process';import{promisify}from'node:util';import assert from'node:assert/strict';
 const exec=promisify(execFile),dir=await mkdtemp(join(tmpdir(),'termnote-obsidian-')),profileID='qa-'+Date.now();
-async function ev(code){const{stdout}=await exec('obsidian',['vault=test-vault','eval','code='+code],{timeout:60000,maxBuffer:2e6});const result=stdout.slice(stdout.indexOf('=>')+2).trim();try{return JSON.parse(result);}catch{throw Error(result);}}
+async function ev(code){const{stdout}=await exec('obsidian',['eval','vault=test-vault','code='+code],{timeout:60000,maxBuffer:2e6});const result=stdout.slice(stdout.indexOf('=>')+2).trim();try{return JSON.parse(result);}catch{throw Error(result);}}
 let calls=0;
 const mock=createServer(async(req,res)=>{
   let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw||'{}');calls++;
@@ -40,7 +40,7 @@ try {
   assert.equal(resumed.native,before[0].native);assert.match(resumed.body,/TERMNOTE-继续原会话/);assert.equal((resumed.body.match(/TERMNOTE-0-中文对话/g)||[]).length,1);
   const report={ok:true,standardFilesOnly:true,version:'0.2.0',twoSessions:true,nativeTUI:true,unicode:true,reloadDedupe:true,deletedProfileResume:true,localModelRequests:calls,records,evidence:dir};
   await writeFile(join(dir,'report.json'),JSON.stringify(report,null,2));
-  if(process.env.TERMNOTE_CAPTURE){await ev(`(()=>{const p=document.querySelector('.ant-preview');if(p)p.scrollTop=0;return true;})()`);await exec('obsidian',['vault=test-vault','dev:screenshot','path='+process.env.TERMNOTE_CAPTURE]);}
+  if(process.env.TERMNOTE_CAPTURE){await ev(`(()=>{const p=document.querySelector('.ant-preview');if(p)p.scrollTop=0;return true;})()`);await exec('obsidian',['dev:screenshot','vault=test-vault','path='+process.env.TERMNOTE_CAPTURE]);}
   console.log(JSON.stringify(report));
 }finally{
   await ev(`(async()=>{const p=app.plugins.plugins['agent-note-terminal'];for(const id of ${JSON.stringify(ids)}){const s=p?.manager.sessions.get(id);if(s)await s.stop();}if(p){p.data.settings.profiles=p.data.settings.profiles.filter(p=>p.id!==${JSON.stringify(profileID)});await p.manager.persist();}return true;})()`).catch(()=>{});

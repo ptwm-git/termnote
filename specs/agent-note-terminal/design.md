@@ -63,3 +63,8 @@ OpenCode 的原生 `/new` 或切换历史不改变笔记绑定；界面明确提
 - 本轮只检查版本和 help，没有启动 OpenCode 服务、读取历史会话或凭据，也没有进行模型对话。
 
 调查资料：[OpenCode 提供商](https://opencode.ai/docs/providers/)、[CLI](https://opencode.ai/docs/cli/)、[Server](https://opencode.ai/docs/server/)、[SDK](https://opencode.ai/docs/sdk/)。
+
+
+## 0.3.0 右侧纯终端设计
+
+以 Design-Brief.md 为当前界面设计。main.ts 使用原生右侧 WorkspaceLeaf，读取最近中央文件作为来源；manager 在串行队列内创建独立备份并记录 sourcePath，保留旧 record.path 为真正归档目标。settings.ts 迁移默认新会话到独立系统 Shell 配置，历史 profiles/launch/native 保留而不自动启动。view.ts 上方 Markdown、下方 xterm PTY；原生侧栏宽度由宿主调整，内部水平分隔条保存比例。appearance.ts 负责两区独立字号/配色和纯数据校验。export.ts 使用已验证宿主支持的 Electron 原生保存对话框，先完成笔记同步，再原子写入用户所选路径；取消不写。原始日志、快照、冲突与恢复保护不改格式。

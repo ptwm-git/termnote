@@ -1,4 +1,4 @@
-import { FileSystemAdapter,Notice,TFile,type App } from 'obsidian';
+import { FileSystemAdapter,Notice,TFile,TFolder,type TAbstractFile,type App } from 'obsidian';
 import { randomUUID } from 'node:crypto';
 import { join,resolve } from 'node:path';
 import { mkdir,writeFile } from 'node:fs/promises';
@@ -10,6 +10,8 @@ import { NoteWriter } from './writer';
 import { ObsidianNotes } from './access';
 import { findPython,type PythonCommand } from './runtime';
 import {ProjectionProof} from './proof';
+import {defaultShell} from './settings';
+import {SYSTEM_PROFILE_ID} from './types';
 export class Manager {
   readonly sessions=new Map<string,Session>();
   readonly listeners=new Set<(session?:Session,event?:BridgeEvent)=>void>();
@@ -68,7 +70,7 @@ export class Manager {
     this.changed();
   }
   async attach(file:TFile):Promise<Session> {return this.serial(()=>this.attachInternal(file));}
-  private async attachInternal(file:TFile):Promise<Session> {
+  private async attachInternal(file:TFile,sourcePath?:string):Promise<Session> {
     if(file.extension!=='md') throw new Error('请选择 Markdown 笔记');
     const existing=[...this.sessions.values()].find(s=>s.record.path===file.path && s.record.state!=='missing');
     if(existing) {existing.record.visible=true;this.changed();return existing;}
@@ -80,22 +82,31 @@ export class Manager {
       if(owner) await this.notes.update(file.path,text=>detachCopiedBinding(text,oldId));
       else id=oldId as `${string}-${string}-${string}-${string}-${string}`;
     }
-    const profile=this.data.settings.defaultProfile;
-    const record:RecordData={id,path:file.path,profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
+    const profile=SYSTEM_PROFILE_ID;
+    const record:RecordData={id,path:file.path,...(sourcePath?{sourcePath}:{}),profile,visible:true,created:new Date().toISOString(),state:'idle',cwd:'',executable:'',args:[]};
     const session=this.make(record);this.data.records.push(record);
     if(oldId===id) await session.restore();else await session.initialize();
     await session.flush();await this.persist();this.changed();return session;
   }
-  newNote(folder:string):Promise<Session> {return this.serial(async()=>{
+  openFromFile(file:TFile):Promise<Session> {return this.serial(async()=>{
+    const owned=[...this.sessions.values()].find(s=>s.record.path===file.path&&s.record.state!=='missing');
+    if(owned){this.show(owned);return owned;}
+    const pending=[...this.sessions.values()].find(s=>s.record.sourcePath===file.path&&(s.live||s.record.state==='idle'||(s.seq===0&&s.record.state==='failed')));
+    if(pending){this.show(pending);return pending;}
+    return this.newNoteInternal(parentPath(file.path),file.path);
+  });}
+  newNote(folder:string,sourcePath?:string):Promise<Session> {return this.serial(()=>this.newNoteInternal(folder,sourcePath));}
+  private async newNoteInternal(folder:string,sourcePath?:string):Promise<Session> {
     if(folder && !this.app.vault.getFolderByPath(folder)) throw new Error('目标文件夹不存在');
     let n=this.data.counters[folder]??0;
     let path:string;
     do {n++;path=pathFor(folder,fileName(n));} while(await this.app.vault.adapter.exists(path));
-    // Reserve and persist before creating; simultaneous requests use this same queue.
     this.data.counters[folder]=n;await this.persist();
-    const file=await this.app.vault.create(path,`# ${fileName(n).slice(0,-3)}\n`);
-    return this.attachInternal(file);
-  });}
+    const source=sourcePath?this.app.vault.getAbstractFileByPath(sourcePath):null;
+    const origin=source instanceof TFile?'\n来源：'+this.app.fileManager.generateMarkdownLink(source,path)+'\n':'';
+    const file=await this.app.vault.create(path,`# ${fileName(n).slice(0,-3)}\n${origin}`);
+    return this.attachInternal(file,sourcePath);
+  }
   async launch(session:Session,profileId?:string):Promise<void> {
     if(this.closed)throw new Error('插件正在关闭');
     if(session.live) return;
@@ -107,7 +118,7 @@ export class Manager {
     const profile:Profile={...template,args:[...template.args]};
     if(!profile.executable.trim()) {
       if(profile.adapter==='opencode')throw new Error('请在 OpenCode 配置中填写程序路径');
-      profile.executable=process.platform==='win32'?(process.env.ComSpec||'cmd.exe'):(process.env.SHELL||'/bin/zsh');profile.args=process.platform==='win32'?[]:['-l'];
+      const shell=defaultShell(process.platform,process.env);profile.executable=shell.executable;if(!profile.args.length)profile.args=shell.args;
     }
     const cwd=session.record.launch&&(session.seq>0||session.record.native)?(session.record.cwd||session.native.snapshot?.cwd||profile.cwd):profile.cwd.trim()?resolve(profile.cwd):join(this.base,parentPath(session.record.path));
     await session.start(profile,cwd);await this.persist();this.changed();
@@ -129,11 +140,30 @@ export class Manager {
       await this.app.fileManager.renameFile(file,path);await this.persist();this.changed();
     });
   }
-  async renamed(file:TFile,oldPath:string):Promise<void> {
-    for(const session of this.sessions.values())if(session.record.path===oldPath && session.record.state!=='missing') {session.record.path=file.path;session.writer.path=file.path;}
+  async renamed(file:TAbstractFile,oldPath:string):Promise<void> {
+    const moved=(path:string):string=>path===oldPath?file.path:file instanceof TFolder&&path.startsWith(oldPath+'/')?file.path+path.slice(oldPath.length):path;
+    if(file instanceof TFolder)for(const [folder,count]of Object.entries(this.data.counters)) {
+      const next=moved(folder);
+      if(next!==folder){this.data.counters[next]=Math.max(this.data.counters[next]??0,count);delete this.data.counters[folder];}
+    }
+    for(const session of this.sessions.values()) {
+      if(session.record.sourcePath)session.record.sourcePath=moved(session.record.sourcePath);
+      if(session.record.state==='missing')continue;
+      const next=moved(session.record.path);
+      if(next!==session.record.path&&this.app.vault.getAbstractFileByPath(next) instanceof TFile){session.record.path=next;session.writer.path=next;}
+    }
     this.changed();await this.persist();
   }
+  async exportContent(session:Session):Promise<string> {
+    await session.drain();await session.flush();
+    if(session.historyError||session.saveError||session.record.journalError)throw new Error('请先恢复记录同步再导出：'+(session.historyError||session.saveError||session.record.journalError));
+    return this.notes.read(session.record.path);
+  }
   async deleted(path:string):Promise<void> {
+    for(const session of this.sessions.values()) {
+      const source=session.record.sourcePath;
+      if(source&&(source===path||source.startsWith(path+'/')))delete session.record.sourcePath;
+    }
     const victims=[...this.sessions.values()].filter(s=>s.record.state!=='missing' && (s.record.path===path || s.record.path.startsWith(path+'/')));
     for(const session of victims) {
       session.record.state='missing';session.record.visible=false;session.error='绑定笔记已删除，日志保留';await session.stop();session.record.state='missing';

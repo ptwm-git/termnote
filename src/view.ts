@@ -5,8 +5,12 @@ import { createReadStream,existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Manager } from './manager';
 import type { Session } from './session';
-import type { BridgeEvent,Profile } from './types';
-import { STATE_LABEL } from './types';
+import type { BridgeEvent } from './types';
+import { STATE_LABEL,SYSTEM_PROFILE_ID } from './types';
+import {applyAppearance} from './appearance';
+import {ratio} from './settings';
+import {currentFile} from './context';
+import {exportMarkdown} from './export';
 import { parentPath } from './naming';
 export const VIEW_TYPE='agent-note-terminal-view';
 type Pane={element:HTMLElement;terminal:Terminal;fit:FitAddon;loading:boolean;pending:BridgeEvent[];seq:number};
@@ -21,12 +25,6 @@ class SessionPicker extends FuzzySuggestModal<Session> {
   getItems():Session[] {return [...this.manager.sessions.values()].filter(s=>s.record.state!=='missing');}
   getItemText(s:Session):string {return `${s.record.path} · ${STATE_LABEL[s.record.state]}${s.record.visible?' · 已打开':''}`;}
   onChooseItem(s:Session):void {this.chosen(s);}
-}
-class ProfilePicker extends FuzzySuggestModal<Profile> {
-  constructor(private manager:Manager,private preferred:string,private chosen:(profile:Profile)=>void) {super(manager.app);this.setPlaceholder('为新终端笔记选择 Agent（回车使用首项）');}
-  getItems():Profile[] {return [...this.manager.data.settings.profiles].sort((a,b)=>Number(b.id===this.preferred)-Number(a.id===this.preferred));}
-  getItemText(p:Profile):string {return `${p.name} · ${p.adapter==='opencode'?'原生会话与角色记录':'通用终端记录'}`;}
-  onChooseItem(p:Profile):void {this.chosen(p);}
 }
 class RenameModal extends Modal {
   constructor(private manager:Manager,private session:Session) {super(manager.app);}
@@ -45,6 +43,8 @@ export class TerminalView extends ItemView {
   private status!:HTMLElement;private preview!:HTMLElement;private message!:HTMLElement;
   private panes=new Map<string,Pane>();private observer?:ResizeObserver;
   private toolbarKey='';private previewRevision='';private disposed=false;
+  private split!:HTMLElement;private divider!:HTMLElement;private terminalTitle!:HTMLElement;
+  private appearanceKey='';private dragId:number|null=null;
   private previewComponent?:Component;private previewGeneration=0;
   constructor(leaf:WorkspaceLeaf,readonly manager:Manager) {super(leaf);}
   getViewType():string {return VIEW_TYPE;}
@@ -65,10 +65,16 @@ export class TerminalView extends ItemView {
     this.toolbar=this.contentEl.createDiv({cls:'ant-toolbar'});
     this.status=this.contentEl.createDiv({cls:'ant-status',attr:{role:'status','aria-live':'polite'}});
     this.message=this.contentEl.createDiv({cls:'ant-message'});
-    const split=this.contentEl.createDiv({cls:'ant-split'});
-    this.stages=split.createDiv({cls:'ant-stages'});
-    const record=split.createDiv({cls:'ant-record'});record.createEl('div',{text:'笔记记录 · 自动保存',cls:'ant-record-title'});
+    this.split=this.contentEl.createDiv({cls:'ant-split'});
+    const record=this.split.createDiv({cls:'ant-record'});
+    record.createDiv({text:'备份记录 · 自动保存',cls:'ant-section-title'});
     this.preview=record.createDiv({cls:'ant-preview markdown-rendered'});
+    this.divider=this.split.createDiv({cls:'ant-divider',attr:{role:'separator',tabindex:'0','aria-label':'调整备份与终端的高度','aria-orientation':'horizontal','aria-valuemin':'20','aria-valuemax':'80',title:'拖动调整上下比例；上下方向键微调'}});
+    const terminalArea=this.split.createDiv({cls:'ant-terminal-area'});
+    this.terminalTitle=terminalArea.createDiv({text:'系统终端',cls:'ant-section-title'});
+    this.stages=terminalArea.createDiv({cls:'ant-stages'});
+    this.bindDivider();
+    this.registerEvent(this.app.workspace.on('css-change',()=>{this.appearanceKey='';this.render();}));
     const listener=(session?:Session,event?:BridgeEvent)=>{
       if(this.disposed)return;
       if(session && event) {
@@ -81,9 +87,43 @@ export class TerminalView extends ItemView {
     this.observer=new ResizeObserver(()=>this.fitActive());this.observer.observe(this.stages);
     this.render();
   }
+  private bindDivider():void {
+    const change=(value:number)=>{
+      this.manager.data.settings.recordRatio=ratio(value);applyAppearance(this.contentEl,this.manager.data.settings);
+      this.divider.setAttribute('aria-valuenow',String(Math.round(this.manager.data.settings.recordRatio*100)));this.fitActive();
+    };
+    const finish=()=>{if(this.dragId===null)return;this.dragId=null;this.manager.changed();this.run(this.manager.persist());};
+    this.registerDomEvent(this.divider,'pointerdown',event=>{
+      if(event.button!==0)return;event.preventDefault();this.dragId=event.pointerId;this.divider.setPointerCapture(event.pointerId);
+    });
+    this.registerDomEvent(this.divider,'pointermove',event=>{
+      if(event.pointerId!==this.dragId)return;
+      const rect=this.split.getBoundingClientRect();if(rect.height)change((event.clientY-rect.top)/rect.height);
+    });
+    this.registerDomEvent(this.divider,'pointerup',finish);
+    this.registerDomEvent(this.divider,'pointercancel',finish);
+    this.registerDomEvent(this.divider,'lostpointercapture',finish);
+    this.registerDomEvent(this.divider,'keydown',event=>{
+      const current=this.manager.data.settings.recordRatio;
+      const next=event.key==='ArrowUp'?current-0.05:event.key==='ArrowDown'?current+0.05:event.key==='Home'?0.2:event.key==='End'?0.8:null;
+      if(next===null)return;event.preventDefault();change(next);this.manager.changed();this.run(this.manager.persist());
+    });
+  }
+  private updateAppearance():void {
+    const settings=this.manager.data.settings;applyAppearance(this.contentEl,settings);
+    this.divider.setAttribute('aria-valuenow',String(Math.round(settings.recordRatio*100)));
+    const style=getComputedStyle(this.stages),background=style.backgroundColor,foreground=style.color;
+    const key=[settings.fontSize,background,foreground].join('|');
+    if(this.appearanceKey===key)return;this.appearanceKey=key;
+    for(const pane of this.panes.values()){
+      pane.terminal.options.fontSize=settings.fontSize;
+      pane.terminal.options.theme={background,foreground,cursor:foreground};
+    }
+    this.fitActive();
+  }
   select(session:Session):void {
     this.manager.show(session);this.activeId=session.record.id;this.render();this.app.workspace.requestSaveLayout();
-    requestAnimationFrame(()=>this.panes.get(session.record.id)?.terminal.focus());
+    this.contentEl.ownerDocument.defaultView!.requestAnimationFrame(()=>this.panes.get(session.record.id)?.terminal.focus());
   }
   private current():Session|undefined {return this.manager.sessions.get(this.activeId);}
   private apply(pane:Pane,event:BridgeEvent):void {
@@ -95,7 +135,8 @@ export class TerminalView extends ItemView {
   private async createPane(session:Session):Promise<void> {
     if(this.panes.has(session.record.id))return;
     const element=this.stages.createDiv({cls:'ant-terminal'});
-    const terminal=new Terminal({fontSize:this.manager.data.settings.fontSize,fontFamily:getComputedStyle(this.contentEl).getPropertyValue('--font-monospace').trim()||'monospace',cursorBlink:true,scrollback:10000,allowProposedApi:true,theme:{background:'#1e1e1e',foreground:'#dadada'}});
+    const style=getComputedStyle(this.stages);
+    const terminal=new Terminal({fontSize:this.manager.data.settings.fontSize,fontFamily:getComputedStyle(this.contentEl).getPropertyValue('--font-monospace').trim()||'monospace',cursorBlink:true,scrollback:10000,allowProposedApi:true,theme:{background:style.backgroundColor,foreground:style.color,cursor:style.color}});
     const fit=new FitAddon();terminal.loadAddon(fit);terminal.open(element);
     const pane:Pane={element,terminal,fit,loading:true,pending:[],seq:0};this.panes.set(session.record.id,pane);
     terminal.onData(data=>{if(!pane.loading)session.write(data);});
@@ -139,24 +180,19 @@ export class TerminalView extends ItemView {
   }
   private openNote(session:Session):void {
     const file=this.app.vault.getAbstractFileByPath(session.record.path);
-    if(file instanceof TFile)this.run(this.app.workspace.getLeaf('split').openFile(file));
+    if(file instanceof TFile)this.run(this.app.workspace.getLeaf('tab').openFile(file));
   }
   newTab(folder?:string):void {
-    const current=this.current();
-    const create=async(target:string,profile:string)=>{
-      const session=await this.manager.newNote(target);session.record.profile=profile;this.select(session);await this.manager.launch(session,profile);
+    const file=currentFile(this.app),current=this.current();
+    const create=async(target:string)=>{
+      const session=await this.manager.newNote(target,file?.path);this.select(session);await this.manager.launch(session);
     };
-    const choose=(target:string)=>{
-      const data=this.manager.data.settings,preferred=data.profiles.some(p=>p.id===current?.record.profile)?current!.record.profile:data.defaultProfile;
-      if(data.profiles.length===1)this.run(create(target,data.profiles[0].id));
-      else new ProfilePicker(this.manager,preferred,p=>this.run(create(target,p.id))).open();
-    };
-    const target=folder??(current?parentPath(current.record.path):undefined);
-    if(target!==undefined)choose(target);
-    else new FolderPicker(this.app,item=>choose(item.path)).open();
+    const target=folder??(file?parentPath(file.path):current?parentPath(current.record.path):undefined);
+    if(target!==undefined)this.run(create(target));else new FolderPicker(this.app,item=>this.run(create(item.path))).open();
   }
   private render():void {
     if(!this.tabs||this.disposed)return;
+    this.updateAppearance();
     const visible=this.manager.data.records.filter(r=>r.visible && this.manager.sessions.has(r.id));
     if(!visible.some(r=>r.id===this.activeId)) this.activeId=visible[0]?.id??'';
     this.tabs.empty();
@@ -171,21 +207,27 @@ export class TerminalView extends ItemView {
       tab.addEventListener('contextmenu',e=>{e.preventDefault();this.menu(session,e);});
       tab.draggable=true;tab.addEventListener('dragstart',e=>e.dataTransfer?.setData('text/ant-session',record.id));
       tab.addEventListener('dragover',e=>e.preventDefault());tab.addEventListener('drop',e=>{e.preventDefault();this.manager.reorder(e.dataTransfer?.getData('text/ant-session')||'',record.id);});
-      if(!this.panes.has(record.id))this.run(this.createPane(session));
+
     }
     for(const [id,pane] of this.panes) pane.element.toggleClass('ant-hidden',id!==this.activeId);
     const session=this.current();
-    const key=[this.activeId,session?.record.state,session?.record.path,JSON.stringify(this.manager.data.settings.profiles),session?.saveError].join('|');
+    if(session&&!this.panes.has(session.record.id))this.run(this.createPane(session));
+    for(const [id,pane]of this.panes)pane.element.toggleClass('ant-hidden',id!==this.activeId);
+    this.terminalTitle.setText(session?.record.native?'历史终端（主动恢复后继续）':'系统终端 · 直接输入本机 CLI 命令');
+    const key=[this.activeId,session?.record.state,session?.record.path,session?.saveError,session?.record.native?.sessionID].join('|');
     if(this.toolbarKey!==key) {this.toolbarKey=key;this.renderToolbar(session);}
-    if(!session) {this.status.setText('每个标签对应一个笔记文件和独立会话。点击 ＋ 新建更多终端页面。');this.message.setText('');this.preview.setText('会话的命令和可读输出将持续保存在对应笔记中。');return;}
-    this.status.setText(`${STATE_LABEL[session.record.state]} · ${session.record.journalError?'原始日志故障，程序已停止：'+session.record.journalError:session.saveError?'笔记待同步：'+session.saveError:session.savedAt?'笔记已保存 '+session.savedAt:'等待保存'} · ${session.record.cwd||'工作目录：笔记所在文件夹'}`);
+    if(!session) {
+      this.previewRevision='';this.previewGeneration++;this.previewComponent?.unload();this.previewComponent=undefined;
+      this.status.setText('每个标签是独立系统终端与备份文件。点击 ＋ 在当前文件夹新建。');this.message.setText('');this.preview.setText('终端可见内容将自动保存在同目录的新笔记中，当前文档保持原样。');return;
+    }
+    this.status.setText(`${STATE_LABEL[session.record.state]} · ${session.record.journalError?'原始日志故障，程序已停止：'+session.record.journalError:session.saveError?'笔记待同步：'+session.saveError:session.savedAt?'备份已保存 '+session.savedAt:'等待保存'} · ${session.record.cwd||'工作目录：笔记所在文件夹'}`);
     this.status.toggleClass('ant-error',!!session.saveError||!!session.record.journalError);
     this.message.setText([session.error,session.nativeError&&'原生记录待同步：'+session.nativeError,session.record.native&&'当前笔记固定绑定此 OpenCode 会话。新对话请使用插件「＋」；原生 /new 或历史切换不会更改归档对象。'].filter(Boolean).join('\n'));this.message.toggleClass('ant-error',!!session.error||!!session.nativeError);
     const revision=this.activeId+':'+session.savedRevision+':'+session.record.state;
     if(revision!==this.previewRevision) {
       this.previewRevision=revision;const generation=++this.previewGeneration;
       void (async()=>{
-        const body=await session.content(),target=document.createElement('div'),component=new Component();component.load();
+        const body=await session.content(),target=createDiv(),component=new Component();component.load();
         try {
           await MarkdownRenderer.render(this.app,body,target,session.record.path,component);
           if(this.current()===session&&!this.disposed && generation===this.previewGeneration) {
@@ -196,35 +238,33 @@ export class TerminalView extends ItemView {
         } catch {component.unload();}
       })();
     }
-    requestAnimationFrame(()=>this.fitActive());
+    this.contentEl.ownerDocument.defaultView!.requestAnimationFrame(()=>this.fitActive());
   }
   private renderToolbar(session?:Session):void {
     this.toolbar.empty();
-    if(!session) {
-      this.toolbar.createEl('span',{text:'终端笔记',cls:'ant-title'});
-      this.toolbar.createEl('button',{text:'使用当前笔记'}).addEventListener('click',()=>{
-        const file=this.app.workspace.getActiveFile();
-        if(file?.extension==='md')this.run(this.manager.attach(file).then(s=>{this.select(s);return this.manager.launch(s);}));
-        else this.newTab();
-      });
-      this.toolbar.createEl('button',{text:'新建终端页面'}).addEventListener('click',()=>this.newTab());return;
+    if(!session){
+      this.toolbar.createSpan({text:'系统终端',cls:'ant-title'});
+      this.toolbar.createEl('button',{text:'新建备份'}).addEventListener('click',()=>this.newTab());return;
     }
-    this.toolbar.createEl('span',{text:session.record.path,cls:'ant-file',attr:{title:session.record.path}});
-    const select=this.toolbar.createEl('select',{attr:{'aria-label':'启动配置'}});
-    for(const profile of this.manager.data.settings.profiles)select.createEl('option',{text:profile.name,value:profile.id});
-    if(!this.manager.data.settings.profiles.some(p=>p.id===session.record.profile))select.createEl('option',{text:(session.record.launch?.name??'原配置')+'（历史快照）',value:session.record.profile});
-    select.value=session.record.profile;select.disabled=session.record.state==='starting';select.title='已有会话更换配置会创建新笔记';
-    select.addEventListener('change',()=>{const profile=select.value;select.value=session.record.profile;this.run(this.manager.selectProfile(session,profile).then(next=>this.select(next)));});
-    if(session.record.state==='idle'||session.record.state==='failed'||(!session.live&&session.record.native)) this.button(this.toolbar,'play',session.record.native?'继续此 OpenCode 会话':'启动当前配置',()=>this.run(this.manager.launch(session)));
-    if(session.live)this.button(this.toolbar,'square','结束会话并保存',()=>this.run(session.stop()));
-    if(session.record.native)this.button(this.toolbar,'download','从此 OpenCode 原生会话补齐记录',()=>this.run(session.refreshNative()));
-    this.button(this.toolbar,'file-text','打开对应笔记',()=>this.openNote(session));
-    this.button(this.toolbar,'pencil','重命名实际笔记文件',()=>new RenameModal(this.manager,session).open());
-    this.button(this.toolbar,'folder-open','在文件管理器中显示原始日志',()=>{
-      const electron=require('electron') as {shell:{showItemInFolder(path:string):void}};electron.shell.showItemInFolder(session.journal);
+    this.toolbar.createSpan({text:session.record.path.split('/').pop()!,cls:'ant-file',attr:{title:session.record.path}});
+    if((session.record.state==='idle'||session.record.state==='failed')&&session.record.profile===SYSTEM_PROFILE_ID&&!session.record.native)this.button(this.toolbar,'play','启动系统终端',()=>this.run(this.manager.launch(session)));
+    if(session.live)this.button(this.toolbar,'square','结束终端并保存备份',()=>this.run(session.stop()));
+    this.button(this.toolbar,'file-text','在中央打开备份笔记',()=>this.openNote(session));
+    this.button(this.toolbar,'pencil','重命名备份文件',()=>new RenameModal(this.manager,session).open());
+    this.button(this.toolbar,'save','导出 Markdown 到本地',()=>this.run(exportMarkdown(session.record.path,()=>this.manager.exportContent(session)).then(path=>{if(path)new Notice('已导出备份：'+path);})));
+    this.button(this.toolbar,'copy','复制已保存备份',()=>this.run(this.manager.exportContent(session).then(text=>navigator.clipboard.writeText(text))));
+    const more=this.button(this.toolbar,'more-horizontal','更多操作',()=>{
+      const menu=new Menu();
+      menu.addItem(item=>item.setTitle('在文件管理器中显示原始日志').setIcon('folder-open').onClick(()=>{
+        const electron=require('electron') as {shell:{showItemInFolder(path:string):void}};electron.shell.showItemInFolder(session.journal);
+      }));
+      if(session.record.native){
+        if(!session.live)menu.addItem(item=>item.setTitle('继续历史 OpenCode 会话').setIcon('play').onClick(()=>this.run(this.manager.launch(session))));
+        menu.addItem(item=>item.setTitle('补齐历史原生记录').setIcon('download').onClick(()=>this.run(session.refreshNative())));
+      }
+      if(session.saveError)menu.addItem(item=>item.setTitle('备份当前文件并恢复同步').setIcon('refresh-cw').onClick(()=>this.run(this.manager.repair(session))));
+      menu.showAtPosition({x:more.getBoundingClientRect().left,y:more.getBoundingClientRect().bottom});
     });
-    this.button(this.toolbar,'copy','复制可读记录',()=>this.run(session.body().then(text=>navigator.clipboard.writeText(text))));
-    if(session.saveError)this.button(this.toolbar,'refresh-cw','备份当前笔记并恢复日志同步',()=>this.run(this.manager.repair(session)));
   }
   async onClose():Promise<void> {
     this.disposed=true;this.previewComponent?.unload();this.observer?.disconnect();for(const pane of this.panes.values())pane.terminal.dispose();this.panes.clear();
