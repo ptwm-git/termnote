@@ -1,12 +1,25 @@
 # TermNote 发布记录
 
-名称：TermNote · 终端笔记。插件 ID：`agent-note-terminal`。日期：2026-10-19。当前公开发行版本：**0.3.1**。
+名称：TermNote · 终端笔记。插件 ID：`agent-note-terminal`。日期：2026-10-19。当前公开发行版本：**0.3.3**。
 
 ## 安装入口
 
-- [GitHub 0.3.1 发行版](https://github.com/ptwm-git/termnote/releases/tag/0.3.1) 已公开，含三个标准运行文件、手动安装 ZIP 和 SHA256SUMS。
-- BRAT 添加仓库 `ptwm-git/termnote`。已在独立测试库将安装文件置为0.3.0，再由BRAT在线更新到公开0.3.1；旧运行文件在更新前保持禁用，未启动降级程序。53个会话ID、51份现存笔记、完整设置均保留，记录内容与升级前完全一致，运行文件与CI附件匹配。
-- [Obsidian 社区条目](https://community.obsidian.md/plugins/agent-note-terminal) 的0.3.1正式扫描已 Completed、无 Error。固定源码预览与正式发行两次扫描均通过；主程序和样式来源证明 Pass，平台重新构建 main.js 并确认逐字节一致，公开 Add to Obsidian 安装入口可用。
+- [GitHub 0.3.3 发行版](https://github.com/ptwm-git/termnote/releases/tag/0.3.3) 已公开，含三个标准运行文件、手动安装 ZIP 和 SHA256SUMS。
+- BRAT 添加仓库 `ptwm-git/termnote`。已在独立测试库将安装文件置为0.3.1，再由BRAT在线更新到公开0.3.3；旧运行文件在更新前保持禁用，未启动降级程序。84个会话ID、82份现存笔记、完整设置均保留，记录内容与升级前完全一致，运行文件与CI附件匹配。
+- [Obsidian 社区条目](https://community.obsidian.md/plugins/agent-note-terminal) 的0.3.3正式扫描与固定源码预览均Completed、无Error，主程序/样式来源证明Pass，平台逐字节重建main.js成功，公开Add to Obsidian安装入口可用。
+
+## 0.3.3 发行证据
+
+- macOS默认字体下的中文上沿裁切由终端默认行高不足引起，默认改为1.3；主题字体变化重新测量。实际10/12/16/24px字号及网格适配通过，不要求用户改外观设置。[实际对照截图](font-rendering-0.3.3.png)。
+- 合并0.3.2调整：粘贴走原生单路事件，500ms只用于保存；单标签关闭提供保存并退出/不保存/取消；不保存停止后删除生成备份并清理独立日志；同目录命名优先最小缺号，新建UUID不复用。0.3.2仅形成未公开草稿，未单独公开发行。
+- 历史恢复等待工作区就绪，入口/退出共用初始化任务；移动与共享来源重新核验，读取失败不能用空历史覆盖已有笔记。实际冷重载84个ID、82份笔记、84份原始日志、26个可见标签及activeId保留，0自动运行、0健康错误。
+- 最终源码与0.3.3标签：`4616467838e06347b5c5218a389757c6bb7354a1`。固定提交社区预览Completed、无Error；[源码CI39220130495](https://github.com/ptwm-git/termnote/actions/runs/39220130495)成功后才创建标签。
+- [标签检查39220550098](https://github.com/ptwm-git/termnote/actions/runs/39220550098)和[发行工作流39220550198](https://github.com/ptwm-git/termnote/actions/runs/39220550198)成功。macOS Node80项、Windows Node78通过/2个固定POSIX用例跳过，Python各7项及Windows真实PowerShell/OpenCode1.19.3协议通过。官方ESLint为0 Error /101 Warning。
+- fresh独立最终复核PASS，初始化/退出/失败和加载期间两类移动竞态有独立探针；实际macOS Obsidian粘贴、关闭三选择、补号、后台保存和字体刷新通过。Windows Obsidian图形界面及原生剪贴板仍待人工测试。
+- 下载CI附件后，SHA256SUMS、ZIP CRC、六文件清单和本机构建字节对照通过；主程序/样式来源证明均验证至准确0.3.3标签和上述源码SHA。
+- ZIP SHA256：`51ebec7825663cf96fad6589cee1fb05fd4cbdfd52d9774ef5d844f6c0a4bcc9`。
+- 实际BRAT 0.3.1→0.3.3升级保留84个ID、82份笔记哈希、设置及完整对话，0自动运行、0健康错误；运行文件与公开CI附件一致。未改动正式Documents知识库的运行会话。
+- 社区0.3.3正式扫描Completed、无Error，主程序/样式来源证明Pass，依赖/网络/混淆检查无阻断，Build reproduced the release main.js byte-for-byte。既有Warning/Recommendation保留，不描述为零警告；公开Add to Obsidian链接目标为`obsidian://show-plugin?id=agent-note-terminal`。
 
 ## 0.3.1 发行证据
 

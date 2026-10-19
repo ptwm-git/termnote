@@ -6,7 +6,8 @@
 - 工作区恢复推迟至layoutReady，先注册视图不阻塞布局；公共入口等待同一任务，恢复中的新建/历史在视图或插件关闭后取消。加载前/中重命名即时追踪，移动路径按UUID重新建立投影；历史共享来源路径变化也重新核验，避免旧路径不存在结论误清日志。
 - 新增加载绑定读取失败保护，未完成restore不能用空历史覆盖笔记；已恢复后的普通写入冲突继续允许修复。现80项Node +7项Python、类型检查/构建通过，官方ESLint 0 Error /101 Warning。
 - 实际独立库0.3.3运行0.3.2 GUI脚本，粘贴1份、Modal三选择、补号及后台保存通过，原74会话/72笔记保持。单测试库窗口重新加载后79ID、77笔记、79原始日志、22可见标签与activeId精确保留；0自动运行、0健康错误，仅2个历史同路径异ID保护记录维持missing。脚本 scripts/obsidian-v033.mjs 的font/reload/verify可复验；没有重载正式库窗口。
-- fresh最终独立复核PASS：初始化/退出/失败与两类加载中移动竞态均由独立探针确认保护。最终修正版GUI复验通过：原79ID/77笔记保留，字号/主题重测一致；再重载后84ID/82笔记/84日志/26可见标签与activeId均保持，0自动运行/0健康错误。两平台CI、发行来源证明、BRAT与社区正式扫描待完成。Windows Obsidian图形界面/原生剪贴板、全应用强杀断电和云同步并发仍未全面验收。
+- fresh最终独立复核PASS：初始化/退出/失败与两类加载中移动竞态均由独立探针确认保护。最终修正版GUI复验通过：原79ID/77笔记保留，字号/主题重测一致；再重载后84ID/82笔记/84日志/26可见标签与activeId均保持，0自动运行/0健康错误。[源码CI39220130495](https://github.com/ptwm-git/termnote/actions/runs/39220130495)两平台通过：macOS Node80，Windows Node78通过/2个固定POSIX用例跳过，Python均7项及真实Windows OpenCode通过。固定源码4616467的社区预览Completed、无Error。
+- [发行CI39220550198](https://github.com/ptwm-git/termnote/actions/runs/39220550198)与标签检查39220550098成功。CI附件校验值、ZIP CRC/六文件、构建字节对照及准确0.3.3标签/4616467来源证明均通过，0.3.3已公开。实际BRAT从禁用的0.3.1运行文件更新到0.3.3，84ID/82笔记哈希、设置及对话保持，0自动运行/0健康错误，安装文件与公开附件一致；没有运行降级程序或改动正式Documents知识库。社区0.3.3正式扫描Completed、无Error，主程序/样式来源证明Pass，依赖/网络/混淆无阻断，平台确认Build reproduced the release main.js byte-for-byte；公开Add to Obsidian链接可用，Warning/Recommendation保留。Windows Obsidian图形界面/原生剪贴板、全应用强杀断电和云同步并发仍未全面验收。
 
 ## 0.3.2 粘贴与退出管理 — 2026-10-19
 
