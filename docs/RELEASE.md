@@ -1,12 +1,26 @@
 # TermNote 发布记录
 
-名称：TermNote · 终端笔记。插件 ID：`agent-note-terminal`。日期：2026-10-19。当前公开发行版本：**0.3.0**。
+名称：TermNote · 终端笔记。插件 ID：`agent-note-terminal`。日期：2026-10-19。当前公开发行版本：**0.3.1**。
 
 ## 安装入口
 
-- [GitHub 0.3.0 发行版](https://github.com/ptwm-git/termnote/releases/tag/0.3.0) 已公开，含三个标准运行文件、手动安装 ZIP 和 SHA256SUMS。
-- BRAT 添加仓库 `ptwm-git/termnote`。已从实际安装的 0.2.2 在线升级至 0.3.0，41 个测试记录 ID 和设置全部保留，没有健康记录错误，没有自动启动历史程序；其中包含原有 24 个旧会话。
-- [Obsidian 社区条目](https://community.obsidian.md/plugins/agent-note-terminal) 的 **0.3.0 正式扫描已 Completed、无 Error**，公开 **Add to Obsidian** 链接已启用，目标为 `obsidian://show-plugin?id=agent-note-terminal`。源码预览与正式发行两次扫描均通过；Warning / Recommendation 保留可见，不描述为零警告。
+- [GitHub 0.3.1 发行版](https://github.com/ptwm-git/termnote/releases/tag/0.3.1) 已公开，含三个标准运行文件、手动安装 ZIP 和 SHA256SUMS。
+- BRAT 添加仓库 `ptwm-git/termnote`。已在独立测试库将安装文件置为0.3.0，再由BRAT在线更新到公开0.3.1；旧运行文件在更新前保持禁用，未启动降级程序。53个会话ID、51份现存笔记、完整设置均保留，记录内容与升级前完全一致，运行文件与CI附件匹配。
+- [Obsidian 社区条目](https://community.obsidian.md/plugins/agent-note-terminal) 的0.3.1正式扫描已 Completed、无 Error。固定源码预览与正式发行两次扫描均通过；主程序和样式来源证明 Pass，平台重新构建 main.js 并确认逐字节一致，公开 Add to Obsidian 安装入口可用。
+
+## 0.3.1 发行证据
+
+- 新建标签按「我 / 终端 / 操作」增量记录；合并流式输出和已确认输入回显，模型列表/同步绘制不反复追加整屏。未知边框同文优先保留，避免误删回答，不承诺所有CLI的语义角色。
+- 旧笔记默认冻结原投影，显式生成同目录精简副本；继续旧增强会话先另建文件。原始输出日志保留，损坏日志拒绝作为完整副本来源。
+- 最终源码和0.3.1标签：`6cbe9c30db6a07b32b3b4a97f7c29cf68310d6a9`。固定提交社区预览 Completed、无 Error，且 [源码 CI 39207052019](https://github.com/ptwm-git/termnote/actions/runs/39207052019) 成功后才创建标签。
+- [发行工作流 39207322108](https://github.com/ptwm-git/termnote/actions/runs/39207322108) 的 Windows/macOS 检查、真实Windows OpenCode1.19.3、Ubuntu构建/打包与来源证明全部成功。
+- 本机及macOS CI为61项Node + 7项Python；Windows Node59通过、2个固定POSIX用例跳过，Python7项及实际PowerShell/OpenCode协议通过。官方ESLint为0 Error / 101 Warning，未降低阻断规则。
+- 实际macOS Obsidian普通Shell运行外部OpenCode2.0.26，native:false，本地模拟模型、隔离XDG/私有服务；模型列表与variant确认、20次方向导航、两轮中文问题及完全相同回答通过。最终脚本ok:true，问题各一份、回答两份、列表一份。停止/重载投影逐字节一致，旧39份原件哈希不变。
+- fresh独立审查/修复复核最终PASS。已补齐多行草稿、Ctrl-C/Ctrl-D、同文回答、滚动重复行、spinner、日志结构与ConPTY跨轮重绘回显用例。Windows首次验证发现的问题及修复过程保留在提交历史，不将失败运行描述为通过。
+- 下载CI附件后，SHA256SUMS、ZIP CRC、六文件清单及三个运行文件逐字节对照通过。main.js和styles.css的来源证明均验证到准确0.3.1标签、源码SHA和发行工作流。
+- ZIP SHA256：`c67931482684baef86982397c3f3fa0cbba6a728a0961cfadf8c5e2a90c7991e`。
+- 社区正式扫描确认 Build reproduced the release main.js byte-for-byte；网络、依赖和混淆检查无阻断。Warning / Recommendation 保留，不描述为零警告。
+- Windows Obsidian图形界面、未知Agent角色及未显示消息、长期压力和故障场景仍以验证记录的边界为准。
 
 ## 0.3.0 发行证据
 
